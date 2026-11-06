@@ -11,7 +11,7 @@ import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 UA = f"epaper-dashboard/{VERSION} (+https://github.com/arqfernandolima-rgb/ha-epaper-dashboard)"
 
 
@@ -390,10 +390,12 @@ def calendar(ctx, prev=None):
 
 # ---------------------------------------------------------------- HA entities
 AIR_CLASSES = {"temperature": "temperature", "humidity": "humidity",
-               "volatile_organic_compounds_parts": "voc", "volatile_organic_compounds": "voc"}
+               "volatile_organic_compounds_parts": "voc", "volatile_organic_compounds": "voc",
+               "carbon_dioxide": "co2"}
+AIR_KINDS = ("temperature", "humidity", "voc", "co2")
 
-# One template call: sensors in the listed areas (directly or via their devices) + every Airthings sensor,
-# each with its device, so readings can be grouped per device and per room.
+# One template call: sensors in the listed areas (directly or via their devices) + every Airthings sensor
+# (cloud or Bluetooth integration), each with its device, so readings can be grouped per device and per room.
 ROOMS_TPL = """{%- set ns = namespace(out=[]) -%}
 {%- for a in AREAS -%}
   {%- set en = namespace(ents=(area_entities(a) | list)) -%}
@@ -403,16 +405,20 @@ ROOMS_TPL = """{%- set ns = namespace(out=[]) -%}
         device_attr(device_id(e), 'name_by_user') or device_attr(device_id(e), 'name') or '', a]] -%}
   {%- endfor -%}
 {%- endfor -%}
-{%- for e in integration_entities('airthings') if e.startswith('sensor.') -%}
+{%- for dom in ['airthings', 'airthings_ble'] -%}
+{%- for e in integration_entities(dom) if e.startswith('sensor.') -%}
   {%- set ns.out = ns.out + [['', e, state_attr(e, 'device_class') or '', device_id(e) or e,
       device_attr(device_id(e), 'name_by_user') or device_attr(device_id(e), 'name') or '', area_name(e) or '']] -%}
+{%- endfor -%}
 {%- endfor -%}
 {{ ns.out | to_json }}"""
 
 
 def _indoor_rooms(ctx, states):
-    """Rooms for the Indoor air widget: the areas listed in "Indoor rooms" (best air sensor device in each),
-    or every Airthings device when none are listed. Manual entity options make a room of their own."""
+    """Rooms for the Indoor air widget: the areas listed in "Indoor rooms", or every Airthings device when
+    none are listed. In each room the device with the most readings leads (Airthings wins ties), and
+    readings it can't measure (e.g. CO2 on a Wave Mini) come from other sensors in the same area.
+    Manual entity options make a room of their own."""
     o, ha = ctx.opts, ctx.ha
     wanted = [a.strip() for a in (o.get("indoor_rooms") or []) if a and a.strip()]
     try:
@@ -427,14 +433,18 @@ def _indoor_rooms(ctx, states):
         d = devices.setdefault((asked, dev), {"room": asked or area or dev_name or "Indoor", "readings": {},
                                               "airthings": not asked})
         d["readings"].setdefault(kind, eid)
-    rooms = {}
+    by_room = {}
     for d in devices.values():
-        key = d["room"].lower()
-        best = rooms.get(key)
-        score = (len(d["readings"]), d["airthings"])
-        if best is None or score > (len(best["readings"]), best["airthings"]):
-            rooms[key] = d
-    manual = {k: o.get(f"indoor_{k}") for k in ("temperature", "humidity", "voc") if o.get(f"indoor_{k}")}
+        by_room.setdefault(d["room"].lower(), []).append(d)
+    rooms = {}
+    for key, devs in by_room.items():
+        devs.sort(key=lambda d: (len(d["readings"]), d["airthings"]), reverse=True)
+        readings = dict(devs[0]["readings"])
+        for d in devs[1:]:                         # fill what the main sensor doesn't measure
+            for kind, eid in d["readings"].items():
+                readings.setdefault(kind, eid)
+        rooms[key] = {"room": devs[0]["room"], "readings": readings}
+    manual = {k: o.get(f"indoor_{k}") for k in AIR_KINDS if o.get(f"indoor_{k}")}
     if manual:
         rooms["__manual__"] = {"room": "Indoor", "readings": manual}
     if wanted:
@@ -462,32 +472,22 @@ def discover(ctx, states):
                 or first(cands, lambda e: hint in e))
 
     rooms = _indoor_rooms(ctx, states)
-
-    # Bambu Lab: the printer's sensors share a prefix (sensor.h2c_...); find it from any of the usual ones
-    bambu = [e for e in ha.integration_entities("bambu_lab") if e.startswith("sensor.")]
-    printer = o.get("printer")
-    if not printer:
-        for suffix in ("_print_status", "_print_progress", "_remaining_time", "_current_stage"):
-            hit = first(bambu, lambda e, sf=suffix: e.endswith(sf))
-            if hit:
-                printer = hit
-                break
-    for suffix in ("_print_status", "_print_progress", "_remaining_time", "_current_stage"):
-        if printer and printer.endswith(suffix):
-            printer = printer[: -len(suffix)]
+    printers = _printers(ctx, states)
 
     # Garage doors (MyQ, ratgdo, Meross ...): covers marked as garage/gate, or with "garage" in the name
     garages = sorted(e for e, st in states.items() if e.startswith("cover.") and (
         st.get("attributes", {}).get("device_class") in ("garage", "gate")
         or "garage" in e or "garage" in str(st.get("attributes", {}).get("friendly_name", "")).lower()))
 
+    phone = [e for e in ha.integration_entities("mobile_app") if e.startswith("sensor.")]
     mail = ha.integration_entities("mail_and_packages")
     packages = {
         "arriving": o.get("packages") or first(mail, lambda e: e.endswith("packages_in_transit")),
         "delivered": None if o.get("packages") else first(mail, lambda e: e.endswith("packages_delivered")),
+        # the companion app's "Last notification" sensor: Nest/Google Home package alerts on the phone
+        "notifications": _split(o.get("package_notifications"))
+                         or [e for e in phone if e.endswith("_last_notification")],
     }
-
-    phone = [e for e in ha.integration_entities("mobile_app") if e.startswith("sensor.")]
     health = {
         "steps": o.get("steps") or first(phone, lambda e: "daily_steps" in e),
         "sleep": o.get("sleep") or first(phone, lambda e: "sleep_duration" in e),
@@ -502,5 +502,96 @@ def discover(ctx, states):
             cals = []
     weather_eid = o.get("weather_entity") or ("weather.forecast_home" if "weather.forecast_home" in states
                                               else next((e for e in states if e.startswith("weather.")), None))
-    return {"rooms": rooms, "printer": printer, "packages": packages, "health": health, "calendars": cals,
+    return {"rooms": rooms, "printers": printers, "packages": packages, "health": health, "calendars": cals,
             "weather": weather_eid, "garages": garages}
+
+
+def _split(v):
+    return [x.strip() for x in str(v or "").split(",") if x.strip()]
+
+
+PRINTER_SUFFIXES = ("_print_status", "_print_progress", "_remaining_time", "_current_stage")
+
+
+def _printers(ctx, states):
+    """Every Bambu Lab printer, by entity prefix (sensor.h2c_print_status -> sensor.h2c), with its name.
+    The "3D printer" option (comma-separated) replaces the search."""
+    def prefix(e):
+        return next((e[: -len(sf)] for sf in PRINTER_SUFFIXES if e.endswith(sf)), None)
+
+    picked = [prefix(p) or p for p in _split(ctx.opts.get("printer"))]
+    if not picked:
+        bambu = [e for e in ctx.ha.integration_entities("bambu_lab") if e.startswith("sensor.")]
+        main = {prefix(e) for e in bambu if e.endswith(("_print_status", "_print_progress"))}
+        picked = sorted(main or {p for p in map(prefix, bambu) if p})
+    out = []
+    for p in picked:
+        name = None
+        for sf in ("_print_status", "_print_progress", "_task_name"):
+            fn = str(states.get(p + sf, {}).get("attributes", {}).get("friendly_name") or "")
+            tail = sf[1:].replace("_", " ")
+            if fn.lower().endswith(" " + tail):
+                name = fn[: -len(tail)].strip()
+                break
+        out.append({"id": p, "name": name or p.split(".", 1)[-1].replace("_", " ").upper()})
+    return out
+
+
+# ---------------------------------------------------------------- packages from phone notifications
+# Nest cameras/doorbells announce packages in the Google Home (or Nest) app. The companion app's
+# "Last notification" sensor mirrors each notification into HA; HA's history keeps every one of them.
+HOME_APPS = {"com.google.android.apps.chromecast.app", "com.nest.android"}
+PICKED_UP = ("picked up", "pick up", "retrieved", "removed", "taken", "collected")
+SAME_DROP = dt.timedelta(minutes=10)          # one drop-off often sets off more than one alert
+
+
+def _package_note(st, tz):
+    a = st.get("attributes") or {}
+    app_id = str(a.get("package") or "")
+    if app_id and app_id not in HOME_APPS:
+        return None
+    text = " ".join(str(a.get(k) or "") for k in ("android.title", "android.text", "android.bigText"))
+    text = " ".join(f"{text} {st.get('state') or ''}".split())
+    low = text.lower()
+    if "package" not in low:
+        return None
+    when = None
+    try:
+        if a.get("post_time") not in (None, ""):
+            when = dt.datetime.fromtimestamp(float(a["post_time"]) / 1000, tz)
+    except (TypeError, ValueError, OverflowError):
+        when = None
+    if when is None and st.get("last_changed"):
+        when = dt.datetime.fromisoformat(st["last_changed"]).astimezone(tz)
+    if when is None:
+        return None
+    return when, ("pickup" if any(w in low for w in PICKED_UP) else "delivery"), text[:120]
+
+
+def deliveries(ctx, prev=None):
+    """Today's package deliveries and pickups seen in phone notifications."""
+    ents = ((ctx.discovered or {}).get("packages") or {}).get("notifications") or []
+    if not ents:
+        return {"configured": False}
+    now = ctx.clock()
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    seen, notes = set(), []
+    for series in ctx.ha.history(ents, start):
+        for st in series or []:
+            note = _package_note(st, now.tzinfo)
+            if not note or note[0] < start:
+                continue
+            key = (int(note[0].timestamp()), note[1])
+            if key not in seen:
+                seen.add(key)
+                notes.append(note)
+    notes.sort(key=lambda n: n[0])
+    out = {"delivery": [], "pickup": []}
+    for when, kind, _ in notes:
+        lst = out[kind]
+        if not lst or when - lst[-1] >= SAME_DROP:
+            lst.append(when)
+    return {"configured": True, "day": start.date().isoformat(), "entities": ents,
+            "deliveries": [t.isoformat() for t in out["delivery"]],
+            "pickups": [t.isoformat() for t in out["pickup"]],
+            "last": notes[-1][2] if notes else None}

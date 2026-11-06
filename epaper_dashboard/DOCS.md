@@ -21,14 +21,22 @@ The display reads `http://<HA address>:8090/frame.epd` and only redraws when the
 | Weather, AQI, UV | Open-Meteo, using your Home Assistant home location | none |
 | Stocks | Finnhub (official free API); the day chart is drawn from the app's own samples | free API key + symbols in Configuration (use SPY for the S&P 500) |
 | Portfolio | SnapTrade Personal (free): balances and holdings for E*TRADE (OAuth) and Vanguard, refreshed every 2 hours; stocks and ETFs priced live with Finnhub | SnapTrade client ID + consumer key in Configuration |
-| Claude | Your Clawdmeter daemon pushes Max and Enterprise usage to `http://<HA>:8090/claude` | two lines in the daemon's config (shown on the sidebar page) |
+| Claude | Your Clawdmeter daemon pushes Max and Enterprise usage to `http://<HA>:8090/claude`; a plan with no new usage for a few hours hides | two lines in the daemon's config (shown on the sidebar page) |
 | Calendar | Home Assistant calendar entities | any calendar integration |
-| Indoor air | any temperature / humidity / VOC sensors, per area (up to 3 rooms) | list areas in "Indoor rooms" (default: your Airthings devices) |
-| 3D printer | Bambu Lab integration (HACS) | found automatically |
-| Packages | Mail and Packages integration (HACS) | found automatically |
+| Indoor air | any temperature / humidity / VOC / CO2 sensors, per area (up to 3 rooms); a reading the main sensor lacks (CO2 on a Wave Mini) comes from another sensor in the same area | list areas in "Indoor rooms" (default: every Airthings device) |
+| 3D printers | Bambu Lab integration (HACS), every printer; only ones printing or just done show | found automatically |
+| Packages | Nest package alerts from your phone (companion app "Last notification" sensor, Google Home app only), and/or Mail and Packages | turn on the sensor in the companion app |
 | Health | Companion app Health Connect sensors | enable Daily steps, Sleep duration, Resting heart rate in the app |
 | Garage | any garage door (MyQ, ratgdo ...): banner after it's been open 10 minutes | found automatically |
 | Alerts | any entity and state | add in Configuration |
+
+### The You column
+
+Health is always there. Everything else shows only while it's active: a printer while it prints (and for a while after it finishes), a Claude plan while its usage is moving. **Hide idle items after** (default 3 hours) sets "a while". If the column gets full (two prints and both plans), printers shrink to one line, then the last item drops.
+
+### Packages from Nest
+
+The Nest integration doesn't pass package events to Home Assistant, but your phone gets them from the Google Home app. In the companion app: **Settings > Companion app > Manage sensors > Last notification**, turn it on, allow notification access, and in its **Allow list** pick only **Google Home**. The dashboard reads today's history of that sensor and counts "package" alerts (delivered, or picked up). It ignores every other notification, and with the allow list set, nothing else reaches Home Assistant.
 
 The sidebar page shows a live preview, what was found in Home Assistant, and the status of each source. **Update now** draws a frame right away.
 

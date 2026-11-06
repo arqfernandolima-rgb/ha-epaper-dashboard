@@ -3,6 +3,7 @@
 Inside the app, Supervisor proxies the Core API at http://supervisor/core and
 hands us SUPERVISOR_TOKEN. For testing elsewhere, set HA_URL and HA_TOKEN.
 """
+import datetime as dt
 import json
 import os
 import urllib.parse
@@ -63,6 +64,12 @@ class HA:
         """Call a service that returns data (e.g. weather.get_forecasts)."""
         out = json.loads(self._req("POST", f"/api/services/{domain}/{service}?return_response", data))
         return out.get("service_response", out)
+
+    def history(self, entity_ids, start):
+        """Every change of these entities since `start`, attribute-only changes included."""
+        when = urllib.parse.quote(start.astimezone(dt.timezone.utc).isoformat())
+        q = urllib.parse.urlencode({"filter_entity_id": ",".join(entity_ids), "significant_changes_only": "0"})
+        return self.get(f"/api/history/period/{when}?{q}")
 
     def calendar_events(self, entity_id, start, end):
         q = urllib.parse.urlencode({"start": start.isoformat(), "end": end.isoformat()})

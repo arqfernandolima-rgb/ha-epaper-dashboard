@@ -51,7 +51,7 @@ body{width:1360px;height:480px;overflow:hidden;background:var(--w);color:var(--k
 .nm{font-size:19px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .li{display:flex;gap:14px;font-size:20px;font-weight:500;margin-top:8px}
 .li b{width:96px;flex:none;font-weight:700}
-.one{display:flex;align-items:center;gap:10px;font-size:19px;font-weight:600;border-top:2px solid #000;padding-top:12px}
+.one{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:600;border-top:2px solid #000;padding-top:12px}
 .alert{display:flex;align-items:center;gap:8px;background:var(--r);color:var(--w);font-size:18px;font-weight:700;padding:7px 12px;margin-top:10px}
 .alert .ic{stroke:#fff}
 .bottom>:first-child{margin-top:0}
@@ -67,10 +67,10 @@ body{width:1360px;height:480px;overflow:hidden;background:var(--w);color:var(--k
 .cell b{display:block;font-size:22px;font-weight:700;letter-spacing:-.01em}
 .cell.fair{background:var(--y);border-color:#000}
 .cell.poor{background:var(--r);color:#fff}
-.rooms{display:grid;grid-template-columns:86px repeat(3,1fr);gap:2px 6px;margin-top:6px;align-items:center}
-.rooms .rk{font-size:16px;font-weight:600;padding-left:6px}
-.rooms .rn{font-size:18px;font-weight:600}
-.rooms b.cell{display:block;font-size:22px;font-weight:700;letter-spacing:-.01em;padding:1px 6px 2px}
+.rooms{display:grid;gap:2px 6px;margin-top:6px;align-items:center}
+.rooms .rk{font-size:16px;font-weight:600}
+.rooms .rn{font-size:16px;font-weight:600;padding-left:6px}
+.rooms b.cell{display:block;justify-self:start;font-size:22px;font-weight:700;letter-spacing:-.01em;padding:1px 6px 2px}
 
 .mh{display:flex;justify-content:space-between;align-items:baseline}
 .mrow{display:flex;align-items:center;gap:10px;border-top:2px solid #000;padding:10px 0;flex:1;min-height:0}
@@ -145,14 +145,16 @@ body{width:1360px;height:480px;overflow:hidden;background:var(--w);color:var(--k
   <div class="w">
     <div class="mh"><span class="lbl">Indoor air</span><span class="hint">{{ vm.indoor.area }}</span></div>
     {%- if vm.indoor.rooms | length == 1 %}
-    <div class="cells">
-      {%- for c in vm.indoor.rooms[0].cells if not c.none %}<div class="cell {{ c.lvl }}"><span>{{ c.k }}</span><b>{{ c.v }}</b></div>{% endfor %}
+    {%- set shown = vm.indoor.rooms[0].cells | rejectattr('none') | list %}
+    <div class="cells" style="grid-template-columns:repeat({{ shown | length }},1fr)">
+      {%- for c in shown %}<div class="cell {{ c.lvl }}"><span>{{ c.k }}</span><b>{{ c.v }}</b></div>{% endfor %}
     </div>
     {%- else %}
-    <div class="rooms">
-      <span></span>{% for c in vm.indoor.rooms[0].cells %}<span class="rk">{{ c.k }}</span>{% endfor %}
-      {%- for r in vm.indoor.rooms %}
-      <span class="rn ell">{{ r.name }}</span>{% for c in r.cells %}<b class="cell {{ c.lvl }}">{{ c.v }}</b>{% endfor %}
+    {#- rooms across, readings down: four readings x two or three rooms fit the column width #}
+    <div class="rooms" style="grid-template-columns:54px repeat({{ vm.indoor.rooms | length }},minmax(0,1fr))">
+      <span></span>{% for r in vm.indoor.rooms %}<span class="rn ell">{{ r.name }}</span>{% endfor %}
+      {%- for k in vm.indoor.cols %}{% set i = loop.index0 %}
+      <span class="rk">{{ k }}</span>{% for r in vm.indoor.rooms %}{% set c = r.cells[i] %}<b class="cell {{ c.lvl }}">{{ '—' if c.none else c.v }}</b>{% endfor %}
       {%- endfor %}
     </div>
     {%- endif %}
@@ -177,11 +179,41 @@ body{width:1360px;height:480px;overflow:hidden;background:var(--w);color:var(--k
   {%- endif %}
 </div>
 
-{#- ============ YOU ============ #}
+{#- ============ YOU: Health always, then only what's active ============ #}
 <div class="col">
-  {%- set c = vm.claude %}
-  {%- if c %}
-  <div class="w">
+  {%- for c in vm.you %}
+  {%- if c.kind == 'health' %}
+  <div class="w" data-k="health">
+    <div class="lbl">Health</div>
+    {%- if c.steps %}
+    <div style="display:flex;align-items:baseline;gap:8px;margin-top:6px"><span style="align-self:center">{{ icon('footprints', 26) }}</span><span class="steps">{{ c.steps }}</span><span class="small">steps</span><span style="font-size:17px;font-weight:600;margin-left:auto">{{ c.pct }}%</span></div>
+    <div class="bar" style="height:12px;margin-top:4px"><i style="width:{{ c.pct }}%"></i></div>
+    {%- endif %}
+    {%- if c.sleep or c.rhr %}
+    <div class="sub" style="margin-top:8px">{% if c.sleep %}{{ icon('moon', 22) }}<b>{{ c.sleep }}</b>{% endif %}{% if c.rhr %}{{ icon('heart-pulse', 22) }}<b>{{ c.rhr }}</b> rest{% endif %}</div>
+    {%- endif %}
+  </div>
+  {%- elif c.kind == 'printer' %}
+  {%- if c.pct is not none and c.compact %}
+  <div class="w" data-k="printer">
+    <div class="mh"><span class="lbl ell">{{ c.label }}</span><span class="v20">{% if c.phase == 'paused' %}<span class="chip up">Paused</span>{% else %}{% if c.end %}<span class="small">{{ c.end }}</span>&nbsp; {% endif %}{{ c.pct_text }}{% endif %}</span></div>
+    <div class="bar" style="margin-top:6px"><i style="width:{{ c.pct }}%"></i></div>
+  </div>
+  {%- elif c.pct is not none %}
+  <div class="w" data-k="printer">
+    <div class="mh"><span class="lbl ell">{{ c.label }}</span><span class="v20">{{ c.pct_text }}</span></div>
+    {%- if c.job %}<div class="job ell">{{ c.job }}</div>{% endif %}
+    <div class="bar" style="margin-top:6px"><i style="width:{{ c.pct }}%"></i></div>
+    <div class="small" style="margin-top:6px">{% if c.phase == 'paused' %}<span class="chip up">Paused</span>{% else %}{{ c.line }}{% endif %}</div>
+  </div>
+  {%- else %}
+  <div class="w" data-k="printer">
+    <div class="mh"><span class="lbl ell">{{ c.label }}</span>{% if c.phase == 'failed' %}<span class="chip dn">Failed</span>{% else %}<span class="v20">Done</span>{% endif %}</div>
+    {%- if c.job and not c.compact %}<div class="job ell">{{ c.job }}</div>{% endif %}
+  </div>
+  {%- endif %}
+  {%- elif c.kind == 'claude' %}
+  <div class="w" data-k="claude">
     <div class="lbl">Claude</div>
     {%- for p in c.plans %}
     <div class="row" style="margin:6px 0 1px"><span>{{ p.name }}</span><span class="small">{{ p.sub }}</span></div>
@@ -191,37 +223,7 @@ body{width:1360px;height:480px;overflow:hidden;background:var(--w);color:var(--k
     {%- endfor %}
   </div>
   {%- endif %}
-  {%- set h = vm.health %}
-  {%- if h %}
-  <div class="w">
-    <div class="lbl">Health</div>
-    {%- if h.steps %}
-    <div style="display:flex;align-items:baseline;gap:8px;margin-top:6px"><span style="align-self:center">{{ icon('footprints', 26) }}</span><span class="steps">{{ h.steps }}</span><span class="small">steps</span><span style="font-size:17px;font-weight:600;margin-left:auto">{{ h.pct }}%</span></div>
-    <div class="bar" style="height:12px;margin-top:4px"><i style="width:{{ h.pct }}%"></i></div>
-    {%- endif %}
-    {%- if h.sleep or h.rhr %}
-    <div class="sub" style="margin-top:8px">{% if h.sleep %}{{ icon('moon', 22) }}<b>{{ h.sleep }}</b>{% endif %}{% if h.rhr %}{{ icon('heart-pulse', 22) }}<b>{{ h.rhr }}</b> rest{% endif %}</div>
-    {%- endif %}
-  </div>
-  {%- endif %}
-  {%- set p = vm.printer %}
-  {%- if p %}
-  {%- if p.pct is not none %}
-  <div class="w">
-    <div class="mh"><span class="lbl">3D printer</span><span class="v20">{{ p.pct_text }}</span></div>
-    {%- if p.job %}<div class="job ell">{{ p.job }}</div>{% endif %}
-    <div class="bar" style="margin-top:6px"><i style="width:{{ p.pct }}%"></i></div>
-    <div class="small" style="margin-top:6px">{% if p.phase == 'paused' %}<span class="chip up">Paused</span>{% else %}{{ p.line }}{% endif %}</div>
-  </div>
-  {%- elif p.phase in ('finished', 'failed') %}
-  <div class="w">
-    <div class="mh"><span class="lbl">3D printer</span>{% if p.phase == 'failed' %}<span class="chip dn">Failed</span>{% else %}<span class="v20">Done</span>{% endif %}</div>
-    {%- if p.job %}<div class="job ell">{{ p.job }}</div>{% endif %}
-  </div>
-  {%- else %}
-  <div class="w s"><span class="lbl">3D printer</span><span class="v">Idle</span></div>
-  {%- endif %}
-  {%- endif %}
+  {%- endfor %}
 </div>
 
 </div></body></html>

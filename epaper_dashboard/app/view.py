@@ -285,14 +285,23 @@ def hum_level(v):
     return "poor" if v < 25 or v > 70 else "fair" if v < 30 or v > 60 else ""
 
 
+def co2_level(v):                       # Airthings bands: good < 800 ppm, fair < 1000, poor above
+    return "poor" if v >= 1000 else "fair" if v >= 800 else ""
+
+
+INDOOR = (("temperature", "Temp", 1.0, lambda v: f"{round(v)}°", None),
+          ("humidity", "Hum.", 3.0, lambda v: f"{round(v)}%", hum_level),
+          ("voc", "VOC", 25.0, lambda v: f"{round(v)}", voc_level),
+          ("co2", "CO2", 50.0, lambda v: f"{round(v)}", co2_level))
+
+
 def build_indoor(states, disc, now, sticky):
+    found = (disc.get("rooms") or [])[:3]
+    cols = [c for c in INDOOR if any(r.get(c[0]) for r in found)]     # no column nobody can fill
     rooms = []
-    for room in (disc.get("rooms") or [])[:3]:
+    for room in found:
         cells = []
-        for key, label, step, fmt, lvl in (
-                ("temperature", "Temp", 1.0, lambda v: f"{round(v)}°", None),
-                ("humidity", "Hum.", 3.0, lambda v: f"{round(v)}%", hum_level),
-                ("voc", "VOC", 25.0, lambda v: f"{round(v)}", voc_level)):
+        for key, label, step, fmt, lvl in cols:
             if not room.get(key):
                 cells.append({"k": label, "v": "", "lvl": "", "none": True})
                 continue
@@ -309,14 +318,29 @@ def build_indoor(states, disc, now, sticky):
             rooms.append({"name": room["name"], "cells": cells})
     if not rooms:
         return None
-    return {"area": rooms[0]["name"] if len(rooms) == 1 else "", "rooms": rooms}
+    return {"area": rooms[0]["name"] if len(rooms) == 1 else "", "cols": [c[1] for c in cols], "rooms": rooms}
 
 
-def build_packages(states, disc):
+def build_packages(states, disc, dl=None, now=None):
+    """One line at the bottom of Today: Nest package alerts (from the phone) and/or Mail and Packages."""
     p = disc.get("packages") or {}
-    arriving = num((_state(states, p.get("arriving")) or {}).get("state"))
-    delivered = num((_state(states, p.get("delivered")) or {}).get("state"))
-    a, d = int(arriving or 0), int(delivered or 0)
+    a = int(num((_state(states, p.get("arriving")) or {}).get("state")) or 0)
+    d = int(num((_state(states, p.get("delivered")) or {}).get("state")) or 0)
+    nest = None
+    if dl and dl.get("configured") and now is not None and dl.get("day") == now.date().isoformat():
+        ds = [dt.datetime.fromisoformat(x).astimezone(now.tzinfo) for x in dl.get("deliveries") or []]
+        ps = [dt.datetime.fromisoformat(x).astimezone(now.tzinfo) for x in dl.get("pickups") or []]
+        if ps and (not ds or ps[-1] > ds[-1]):
+            nest = ("picked up", t12(ps[-1]), len(ds))
+        elif ds:
+            nest = ("delivered", t12(ds[-1]), len(ds))
+    if nest:
+        what, when, n = nest
+        if a:
+            return f"{a} arriving · {what} {when}"
+        if what == "picked up":
+            return f"Package picked up {when}"
+        return f"Package delivered {when}" if n == 1 else f"{n} packages delivered · last {when}"
     if a and d:
         return f"{a} arriving · {d} delivered"
     if a:
@@ -373,18 +397,40 @@ def build_health(states, disc, opts, now, sticky):
     return out
 
 
-def build_printer(states, disc, now):
-    p = disc.get("printer")
-    if not p:
-        return None, None
+def idle_hours(opts):
+    try:
+        return max(1, int(opts.get("hide_idle_hours", 3)))
+    except (TypeError, ValueError):
+        return 3
+
+
+def build_printers(states, disc, now, opts):
+    """Only printers that are doing something: printing, paused, or finished/failed within the idle window."""
+    printers = disc.get("printers") or []
+    cards, alerts = [], []
+    for pr in printers:
+        card, alert = build_printer(states, pr["id"], now, idle_hours(opts))
+        label = pr["name"] if len(printers) > 1 else "3D printer"
+        if alert:
+            alerts.append(f"{pr['name']} {alert[0].lower()}{alert[1:]}" if len(printers) > 1 else alert)
+        if card:
+            card["label"] = label
+            cards.append(card)
+    cards.sort(key=lambda c: c["pct"] is None)          # running ones first
+    return cards, alerts
+
+
+def build_printer(states, p, now, idle_h=3):
     st = _state(states, p + "_print_status")
     raw = (st or {}).get("state", "offline").lower()
     phase = {"running": "printing", "prepare": "preparing", "slicing": "preparing", "init": "preparing",
              "pause": "paused", "finish": "finished", "failed": "failed"}.get(raw, "idle")
-    if phase == "finished":
+    if phase in ("finished", "failed"):
         changed = dt.datetime.fromisoformat(st["last_changed"]).astimezone(now.tzinfo) if st.get("last_changed") else now
-        if now - changed > dt.timedelta(hours=2):
+        if now - changed > dt.timedelta(hours=idle_h):
             phase = "idle"
+    if phase == "idle":
+        return None, None
     job = ""
     for suffix in ("_task_name", "_subtask_name", "_gcode_filename"):
         s = _state(states, p + suffix)
@@ -394,7 +440,7 @@ def build_printer(states, disc, now):
                 if job.lower().endswith(ext):
                     job = job[: -len(ext)]
             break
-    out = {"phase": phase, "job": job, "pct": None, "pct_text": "", "line": ""}
+    out = {"phase": phase, "job": job, "pct": None, "pct_text": "", "line": "", "end": ""}
     alert = f"Print failed{': ' + job if job else ''}" if phase == "failed" else None
     if phase in ("printing", "paused", "preparing"):
         prog = num((_state(states, p + "_print_progress") or {}).get("state")) or 0
@@ -422,6 +468,7 @@ def build_printer(states, disc, now):
             end = round_to(end, 15)
             day = "" if end.date() == now.date() else f"{end.strftime('%a')} "
             out["line"] = f"Done about {day}{t12(end)}"
+            out["end"] = f"{day}{t12(end)}"                 # for the one-line version
     elif phase == "finished":
         out["line"] = "Finished"
     elif phase == "failed":
@@ -434,15 +481,23 @@ def use_level(v):
     return "poor" if v >= 90 else "fair" if v >= 75 else ""
 
 
+def claude_hidden(rec, now, opts):
+    """Why a plan is off the screen right now (None = shown)."""
+    if now.timestamp() - rec["at"] > 6 * 3600:
+        return "no update from the daemon in 6 h"           # daemon stopped long ago: hide rather than mislead
+    used = rec.get("used", rec["at"])
+    if now.timestamp() - used > idle_hours(opts) * 3600:
+        return f"idle since {t12(dt.datetime.fromtimestamp(used, now.tzinfo))}"
+    return None
+
+
 def build_claude(cl, now, opts):
     plans = []
     for key in ("max", "enterprise"):
         rec = (cl or {}).get(key)
-        if not rec:
+        if not rec or claude_hidden(rec, now, opts):
             continue
         age = now.timestamp() - rec["at"]
-        if age > 6 * 3600:                         # daemon stopped long ago: hide rather than mislead
-            continue
         p, at = rec["p"], dt.datetime.fromtimestamp(rec["at"], now.tzinfo)
         s = int(round(float(p.get("s") or 0)))
         if key == "max":
@@ -475,13 +530,49 @@ def _safe(name, fn, *args, default=None):
         return default
 
 
+# The You column: Health always, then whatever is active. Heights (px) are measured from the
+# template so a busy afternoon (two prints + both Claude plans) never runs off the bottom.
+YOU_ROOM = 436                  # 480 - top/bottom padding
+YOU_GAP = 28                    # rule between widgets (14 margin + 2 border + 12 padding)
+YOU_H = {"health": 108, "health_steps": 66, "printer": 98, "printer_nojob": 72, "printer_done": 50,
+         "printer_compact": 46, "claude_head": 19, "claude_plan": 29, "claude_bar": 25}
+
+
+def _height(c):
+    k = c["kind"]
+    if k == "health":
+        return YOU_H["health"] if (c.get("sleep") or c.get("rhr")) and c.get("steps") else YOU_H["health_steps"]
+    if k == "printer":
+        if c.get("compact"):
+            return YOU_H["printer_compact"]
+        if c["pct"] is None:
+            return YOU_H["printer_done"]
+        return YOU_H["printer"] if c.get("job") else YOU_H["printer_nojob"]
+    if k == "claude":
+        return YOU_H["claude_head"] + sum(YOU_H["claude_plan"] + YOU_H["claude_bar"] * len(p["bars"])
+                                          for p in c["plans"])
+    return 60
+
+
+def fit_you(cards):
+    def total():
+        return sum(_height(c) for c in cards) + YOU_GAP * max(0, len(cards) - 1)
+    if total() > YOU_ROOM:                       # first squeeze the printers to one line + bar
+        for c in cards:
+            if c["kind"] == "printer":
+                c["compact"] = True
+    while len(cards) > 1 and total() > YOU_ROOM:  # then drop from the bottom (lowest priority)
+        cards.pop()
+    return cards
+
+
 def build(now, data, disc, opts, sticky, tomorrow):
     states = data.get("states") or {}
     alerts = _safe("alerts", build_alerts, states, opts, disc, now, default=[])
-    printer, p_alert = _safe("printer", build_printer, states, disc, now, default=(None, None))
-    if p_alert:
-        alerts.append(p_alert)
-    packages = None if tomorrow else _safe("packages", build_packages, states, disc)   # deliveries are about today
+    printers, p_alerts = _safe("printers", build_printers, states, disc, now, opts, default=([], []))
+    alerts += p_alerts
+    packages = None if tomorrow else _safe("packages", build_packages, states, disc,   # deliveries are about today
+                                           data.get("deliveries"), now)
     bottom = (1 if packages else 0) + len(alerts[:2])      # lines pinned to the bottom of Today
     max_later = 3 if bottom == 0 else 2 if bottom <= 2 else 1
     vm = {
@@ -493,8 +584,11 @@ def build(now, data, disc, opts, sticky, tomorrow):
                    if data.get("weather") else None,
         "indoor": _safe("indoor", build_indoor, states, disc, now, sticky),
         "markets": _safe("markets", build_markets, data.get("markets"), opts, now, sticky, data.get("portfolio")),
-        "health": _safe("health", build_health, states, disc, opts, now, sticky),
-        "printer": printer,
-        "claude": _safe("claude", build_claude, data.get("claude"), now, opts),
     }
+    health = _safe("health", build_health, states, disc, opts, now, sticky)
+    claude = _safe("claude", build_claude, data.get("claude"), now, opts)
+    you = ([{"kind": "health", **health}] if health else []) + [{"kind": "printer", **p} for p in printers] \
+        + ([{"kind": "claude", **claude}] if claude else [])
+    vm["you"] = fit_you(you)
+    vm["claude"] = claude                      # (kept for the status page and tests)
     return vm

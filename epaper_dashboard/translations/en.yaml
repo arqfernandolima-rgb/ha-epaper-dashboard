@@ -7,7 +7,7 @@ configuration:
     description: Calendar entities to show (e.g. calendar.autodesk). Leave empty to use every calendar in Home Assistant.
   indoor_rooms:
     name: Indoor rooms
-    description: Area names to show in Indoor air, top to bottom (e.g. Office, Kitchen); up to 3. In each area the device with the most readings (temperature, humidity, VOC) is used. Leave empty to show your Airthings devices.
+    description: Area names to show in Indoor air, top to bottom (e.g. Office, Kitchen); up to 3. In each area the sensor with the most readings leads, and anything it can't measure (like CO2) comes from other sensors in the same area. Leave empty to show every Airthings device.
   quiet_hours_start:
     name: Quiet hours start
     description: Hour (0-23) when the display stops changing. The last frame before it shows tomorrow.
@@ -32,6 +32,9 @@ configuration:
   garage_alert_minutes:
     name: Garage open for (minutes)
     description: How long a garage door has to stay open before the banner shows. 0 shows it right away.
+  hide_idle_hours:
+    name: Hide idle items after (hours)
+    description: The You column shows Health always, plus only what's active. A Claude plan with no new usage, or a finished or failed print, leaves after this many hours.
   alerts:
     name: Alerts
     description: Red banners at the bottom of the Today column. Each one shows its text while the entity is in that state (e.g. cover.garage_door / open / Garage door open).
@@ -59,12 +62,18 @@ configuration:
   indoor_voc:
     name: Indoor VOC entity (optional)
     description: Only needed if the Airthings sensor isn't found automatically.
+  indoor_co2:
+    name: Indoor CO2 entity (optional)
+    description: Only needed if your CO2 sensor isn't in the same area as the room's other sensors.
   printer:
-    name: 3D printer (optional)
-    description: The printer's print status entity (e.g. sensor.h2c_print_status), if it isn't found automatically.
+    name: 3D printers (optional)
+    description: Print status entities, comma-separated (e.g. sensor.h2c_print_status), if they aren't found automatically. Every Bambu Lab printer is found on its own; only ones printing (or just done) show.
   packages:
-    name: Packages entity (optional)
+    name: Packages arriving entity (optional)
     description: A sensor whose number is packages arriving today, if Mail and Packages isn't installed.
+  package_notifications:
+    name: Phone notification sensor (optional)
+    description: The companion app's Last notification sensor (e.g. sensor.pixel_9_last_notification), used for Nest package alerts. Found automatically.
   steps:
     name: Steps entity (optional)
     description: Daily steps sensor, if the Health Connect one isn't found automatically.

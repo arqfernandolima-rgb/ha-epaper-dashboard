@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 import render
+import view
 
 log = logging.getLogger("dash")
 INGRESS_PEER = "172.30.32.2"
@@ -126,11 +127,16 @@ def status(app):
         off = isinstance(s.data, dict) and s.data.get("configured") is False and not s.error
         srcs.append({"name": s.name, "ok": s.error is None and s.data is not None and not partial and not off,
                      "when": _ago(s.ok_at), "error": s.error or ("; ".join(partial) if partial else None),
-                     "note": "not set up (add your SnapTrade keys in Configuration)" if off else None})
+                     "note": (s.hint or "not set up") if off else None})
     cl = app.claude or {}
     if cl:
         latest = max(r["at"] for r in cl.values())
-        names = ", ".join(("Max" if k == "max" else "Enterprise") + f" {_ago(r['at'])}" for k, r in cl.items())
+        now = app.now()
+
+        def plan(k, r):
+            why = view.claude_hidden(r, now, app.opts)
+            return ("Max" if k == "max" else "Enterprise") + f" {_ago(r['at'])}" + (f" (hidden: {why})" if why else "")
+        names = ", ".join(plan(k, r) for k, r in cl.items())
         srcs.append({"name": "Claude (Clawdmeter daemon)", "ok": time.time() - latest < 1200, "when": names,
                      "error": None if time.time() - latest < 1200 else "no update in 20+ minutes",
                      "note": None})
@@ -138,11 +144,17 @@ def status(app):
         srcs.append({"name": "Claude (Clawdmeter daemon)", "ok": False, "when": "", "error": None,
                      "note": "waiting for the daemon (settings below)"})
     d = app.ctx.discovered or {}
+    labels = {"temperature": "Temp", "humidity": "Hum.", "voc": "VOC", "co2": "CO2"}
+
+    def room(r):
+        have = " · ".join(f"{labels[k]} {r[k]}" for k in labels if r.get(k))
+        return f"{r['name']}: {have}" + ("" if r.get("co2") else " · no CO2 sensor in this area")
+    pk = d.get("packages") or {}
     found = [
-        ("Indoor air", [f"{r['name']}: " + ", ".join(v for k, v in r.items() if k != "name")
-                        for r in d.get("rooms") or []]),
-        ("3D printer", [d["printer"] + "_*"] if d.get("printer") else []),
-        ("Packages", [v for v in (d.get("packages") or {}).values() if v]),
+        ("Indoor air", [room(r) for r in d.get("rooms") or []]),
+        ("3D printers", [f"{p['name']}: {p['id']}_*" for p in d.get("printers") or []]),
+        ("Packages", [f"Nest alerts via {e}" for e in pk.get("notifications") or []]
+                     + [v for k, v in pk.items() if k != "notifications" and v]),
         ("Health", [v for v in (d.get("health") or {}).values() if v]),
         ("Calendars", list(d.get("calendars") or [])),
         ("Backup weather", [d["weather"]] if d.get("weather") else []),
@@ -151,6 +163,9 @@ def status(app):
     pf = app.sources["portfolio"].data or {}
     if pf.get("accounts"):
         found.append(("Brokerage accounts", [f"{a['name']} {a['mask']}".strip() for a in pf["accounts"]]))
+    dl = app.sources["deliveries"].data or {}
+    if dl.get("last"):
+        found.append(("Last package alert today", [dl["last"]]))
     poll = app.last_poll
     return {
         "state": app.state, "drawn": t(app.drawn_at), "render_secs": app.render_secs,

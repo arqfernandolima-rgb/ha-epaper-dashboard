@@ -34,6 +34,13 @@ WORK = os.environ.get("DASH_WORK", "/tmp/dash")
 log = logging.getLogger("dash")
 
 
+def _num(v):
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def load_options():
     try:
         with open(os.path.join(DATA, "options.json")) as f:
@@ -64,8 +71,9 @@ class Ctx:
 
 
 class Source:
-    def __init__(self, name, fn, every, stale_after=None, retry=120):
+    def __init__(self, name, fn, every, stale_after=None, retry=120, hint=None):
         self.name, self.fn, self.every, self.stale_after, self.retry = name, fn, every, stale_after, retry
+        self.hint = hint                     # shown on the status page while it isn't set up
         self.data, self.ok_at, self.tried_at, self.error = None, None, None, None
 
     def due(self, ctx):
@@ -104,8 +112,11 @@ class App:
             "states": Source("Home Assistant", sources.ha_states, 60),
             "calendar": Source("Calendar", sources.calendar, 300, stale_after=6 * 3600),
             "weather": Source("Weather", sources.weather, 900, stale_after=3 * 3600),
-            "portfolio": Source("Portfolio", sources.portfolio, 7200, retry=600),
+            "portfolio": Source("Portfolio", sources.portfolio, 7200, retry=600,
+                                hint="not set up (add your SnapTrade keys in Configuration)"),
             "markets": Source("Markets", sources.markets, self._markets_every, retry=300),
+            "deliveries": Source("Packages (Nest alerts)", sources.deliveries, 120, stale_after=6 * 3600,
+                                 hint="not set up (turn on the companion app's Last notification sensor)"),
         }
         self.discovered_at = 0.0
         self.lock = threading.Lock()              # guards the frame/preview fields
@@ -158,7 +169,12 @@ class App:
             if not key:
                 continue
             clean = {k: p[k] for k in ("s", "sr", "w", "wr", "st", "tp", "pd", "rd", "acct") if k in p}
-            self.claude[key] = {"p": clean, "at": now, "from": str(body.get("host") or ip)[:40]}
+            prev = self.claude.get(key) or {}
+            used = prev.get("used", prev.get("at", now))
+            # "in use" = session or week usage went up (a reset to 0 isn't use)
+            if not prev or any(_num(clean.get(k)) > _num((prev.get("p") or {}).get(k)) for k in ("s", "w")):
+                used = now
+            self.claude[key] = {"p": clean, "at": now, "used": used, "from": str(body.get("host") or ip)[:40]}
         try:
             with open(os.path.join(DATA, "claude.json"), "w") as f:
                 json.dump(self.claude, f)
@@ -305,7 +321,7 @@ class App:
                 self.discovered_at = time.time()
             except Exception as e:
                 log.warning("discovery: %s", e)
-        for key in ("calendar", "weather", "portfolio", "markets"):
+        for key in ("calendar", "weather", "portfolio", "markets", "deliveries"):
             s = self.sources[key]
             if key == "markets":
                 ctx.holdings = self.sources["portfolio"].data      # priced live along with the stocks
