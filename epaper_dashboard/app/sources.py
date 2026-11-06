@@ -4,6 +4,7 @@ import datetime as dt
 import hashlib
 import hmac
 import json
+import re
 import os
 import time
 import urllib.error
@@ -11,7 +12,7 @@ import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
 
-VERSION = "0.6.1"
+VERSION = "0.6.2"
 UA = f"epaper-dashboard/{VERSION} (+https://github.com/arqfernandolima-rgb/ha-epaper-dashboard)"
 
 
@@ -533,7 +534,10 @@ def _printers(ctx, states):
             if fn.lower().endswith(" " + tail):
                 name = fn[: -len(tail)].strip()
                 break
-        out.append({"id": p, "name": name or p.split(".", 1)[-1].replace("_", " ").upper()})
+        name = name or p.split(".", 1)[-1].replace("_", " ").upper()
+        # Bambu names default to "<model>_<serial>" (H2C_31B8AP5B2300863): keep the model
+        name = re.sub(r"[ _-]+[0-9A-Z]{12,}$", "", name) or name
+        out.append({"id": p, "name": name})
     return out
 
 

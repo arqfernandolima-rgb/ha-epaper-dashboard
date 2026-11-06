@@ -93,11 +93,14 @@ def frame_handler(app):
                 return self.send(400, b"bad length\n")
             body = self.rfile.read(n)
             if not hmac.compare_digest(self.headers.get("X-Dashboard-Token", ""), app.push_token):
+                app.claude_rejected = {"at": time.time(), "ip": self.client_address[0], "why": "wrong dashboard_token"}
                 return self.send(403, b"bad token\n")
             try:
                 ok = app.receive_claude(json.loads(body), self.client_address[0])
             except ValueError:
                 ok = False
+            if not ok:
+                app.claude_rejected = {"at": time.time(), "ip": self.client_address[0], "why": "unexpected data"}
             self.send(204 if ok else 400, b"" if ok else b"expected {\"plans\": [...]}\n")
 
         def do_HEAD(self):
@@ -141,8 +144,10 @@ def status(app):
                      "error": None if time.time() - latest < 1200 else "no update in 20+ minutes",
                      "note": None})
     else:
-        srcs.append({"name": "Claude (Clawdmeter daemon)", "ok": False, "when": "", "error": None,
-                     "note": "waiting for the daemon (settings below)"})
+        rej = getattr(app, "claude_rejected", None)
+        srcs.append({"name": "Claude (Clawdmeter daemon)", "ok": False, "when": "",
+                     "error": f"push from {rej['ip']} {_ago(rej['at'])} turned away: {rej['why']}" if rej else None,
+                     "note": None if rej else "waiting for the daemon (settings below)"})
     d = app.ctx.discovered or {}
     labels = {"temperature": "Temp", "humidity": "Hum.", "voc": "VOC", "co2": "CO2"}
 
