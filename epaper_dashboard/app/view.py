@@ -220,7 +220,7 @@ def build_markets(mk, opts, now, sticky):
         if o and c:
             if o <= now_ts < c:
                 status = f"Open · closes {t12(dt.datetime.fromtimestamp(c, now.tzinfo)).replace(':00', '')}"
-            elif now_ts < o and (o - now_ts) < 18 * 3600:
+            elif now_ts < o and dt.datetime.fromtimestamp(o, now.tzinfo).date() == now.date():
                 status = f"Opens {t12(dt.datetime.fromtimestamp(o, now.tzinfo))}"
             break
     if not quotes:
@@ -229,15 +229,17 @@ def build_markets(mk, opts, now, sticky):
     for s in opts.get("stocks", []):
         sym = s["symbol"].upper()
         q = quotes.get(sym)
-        row = {"sym": sym, "name": s.get("name") or "", "price": DASH, "pct": "", "chg": "", "up": True,
-               "series": [], "base": None, "slots": 0}
+        name = s.get("name") or ""
+        index = sym.startswith("^")
+        row = {"sym": sym, "label": (name or sym.lstrip("^")) if index else sym, "name": "" if index else name,
+               "price": DASH, "pct": "", "chg": "", "up": True, "series": [], "base": None, "slots": 0}
         if q and q.get("prev"):
             pct = (q["price"] - q["prev"]) / q["prev"] * 100
             slots = len(q["series"])
             if q.get("open_ts") and q.get("close_ts") and q["open_ts"] <= now_ts < q["close_ts"]:
                 slots = max(slots, int((q["close_ts"] - q["open_ts"]) / 300))
             val = {"price": money(q["price"]), "pct": f"{abs(pct):.2f}%", "chg": signed(q["price"] - q["prev"]),
-                   "up": pct >= 0, "series": [round(x, 2) for x in q["series"]], "base": round(q["prev"], 2),
+                   "up": pct >= 0, "series": [None if x is None else round(x, 2) for x in q["series"]], "base": round(q["prev"], 2),
                    "slots": slots, "p": round(pct, 2)}
             row.update({k: v for k, v in val.items() if k != "p"})
         rows.append(row)

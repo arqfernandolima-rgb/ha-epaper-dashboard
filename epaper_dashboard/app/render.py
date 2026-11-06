@@ -42,10 +42,11 @@ def tri(up):
 def spark(uid, data, base, w, h, slots=0, sw=2.5):
     """Day chart: black line, yellow fill above the previous close, red below.
     `slots` stretches the x axis to the full session so the line grows through the day."""
-    if not data or len(data) < 2:
+    known = [(i, v) for i, v in enumerate(data or []) if v is not None]   # gaps are skipped
+    if len(known) < 2:
         return Markup(f'<svg width="{w}" height="{h}"></svg>')
     n = max(slots or 0, len(data))
-    vals = data + ([base] if base is not None else [])
+    vals = [v for _, v in known] + ([base] if base is not None else [])
     lo, hi, pad = min(vals), max(vals), 3
     span = (hi - lo) or 1
 
@@ -55,13 +56,12 @@ def spark(uid, data, base, w, h, slots=0, sw=2.5):
     def Y(v):
         return pad + (h - 2 * pad) * (1 - (v - lo) / span)
 
-    pts = " ".join(f"{X(i):.1f},{Y(v):.1f}" for i, v in enumerate(data))
+    pts = " ".join(f"{X(i):.1f},{Y(v):.1f}" for i, v in known)
     uid = re.sub(r"[^A-Za-z0-9]", "", uid)
     s = f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
     if base is not None:
         by = f"{Y(base):.1f}"
-        x_end = f"{X(len(data) - 1):.1f}"
-        poly = f"{X(0):.1f},{by} {pts} {x_end},{by}"
+        poly = f"{X(known[0][0]):.1f},{by} {pts} {X(known[-1][0]):.1f},{by}"
         s += (f'<clipPath id="a{uid}"><rect x="0" y="0" width="{w}" height="{by}"/></clipPath>'
               f'<clipPath id="b{uid}"><rect x="0" y="{by}" width="{w}" height="{h}"/></clipPath>'
               f'<polygon points="{poly}" fill="#ff0" clip-path="url(#a{uid})"/>'

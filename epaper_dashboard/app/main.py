@@ -51,6 +51,7 @@ class Ctx:
         self.discovered = {}
         self.lat = self.lon = None
         self.tz, self.tz_name, self.imperial = dt.timezone.utc, "UTC", True
+        self.clock = lambda: dt.datetime.now(self.tz)
 
     def load_ha_config(self):
         c = self.ha.config()
@@ -62,8 +63,8 @@ class Ctx:
 
 
 class Source:
-    def __init__(self, name, fn, every, stale_after=None):
-        self.name, self.fn, self.every, self.stale_after = name, fn, every, stale_after
+    def __init__(self, name, fn, every, stale_after=None, retry=120):
+        self.name, self.fn, self.every, self.stale_after, self.retry = name, fn, every, stale_after, retry
         self.data, self.ok_at, self.tried_at, self.error = None, None, None, None
 
     def due(self, ctx):
@@ -71,7 +72,7 @@ class Source:
             return True
         every = self.every(self) if callable(self.every) else self.every
         if self.error:
-            every = min(every, 120)            # retry failures sooner
+            every = min(every, self.retry)     # retry failures sooner (but don't hammer)
         return time.monotonic() - self.tried_at >= every
 
     def run(self, ctx):
@@ -96,12 +97,13 @@ class App:
         self.opts = load_options()
         self.dev = os.environ.get("DASH_DEV") == "1"
         self.ctx = Ctx(ha_api.HA(), self.opts)
+        self.ctx.clock = lambda: self.now()
         self.sticky = view.Sticky()
         self.sources = {
             "states": Source("Home Assistant", sources.ha_states, 60),
             "calendar": Source("Calendar", sources.calendar, 300, stale_after=6 * 3600),
             "weather": Source("Weather", sources.weather, 900, stale_after=3 * 3600),
-            "markets": Source("Markets", sources.markets, self._markets_every),
+            "markets": Source("Markets", sources.markets, self._markets_every, retry=300),
         }
         self.discovered_at = 0.0
         self.lock = threading.Lock()              # guards the frame/preview fields
@@ -144,7 +146,7 @@ class App:
             log.warning("couldn't save frame: %s", e)
 
     def _markets_every(self, src):
-        return 180 if sources.market_open(src.data, time.time()) else 600
+        return 180 if sources.market_open(src.data, self.now().timestamp()) else 600
 
     # -- quiet hours
     def quiet(self, now):

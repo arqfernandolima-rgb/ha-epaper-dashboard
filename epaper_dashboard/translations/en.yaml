@@ -1,7 +1,7 @@
 configuration:
   stocks:
     name: Stocks
-    description: Ticker symbols to show, top to bottom, with an optional display name. Four or more switch to compact rows.
+    description: Symbols to show, top to bottom, with an optional display name (e.g. SPY / S&P 500). Four or more switch to compact rows.
   calendars:
     name: Calendars
     description: Calendar entities to show (e.g. calendar.autodesk). Leave empty to use every calendar in Home Assistant.
@@ -27,8 +27,8 @@ configuration:
     name: Alerts
     description: Red banners at the bottom of the Today column. Each one shows its text while the entity is in that state (e.g. cover.garage_door / open / Garage door open).
   finnhub_api_key:
-    name: Finnhub API key (optional)
-    description: Backup quote source if Yahoo stops answering. Free key at finnhub.io.
+    name: Finnhub API key
+    description: Needed for stocks. Free at finnhub.io (sign up, copy the key from the dashboard). The free plan covers US stocks and ETFs but not indexes, so use SPY for the S&P 500.
   indoor_temperature:
     name: Indoor temperature entity (optional)
     description: Only needed if the Airthings sensor isn't found automatically.

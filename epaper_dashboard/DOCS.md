@@ -19,7 +19,7 @@ The display reads `http://<HA address>:8090/frame.epd` and only redraws when the
 | Widget | Source | Setup |
 |---|---|---|
 | Weather, AQI, UV | Open-Meteo, using your Home Assistant home location | none |
-| Stocks | Yahoo Finance chart data (delayed), Finnhub as an optional backup | list symbols in Configuration |
+| Stocks | Finnhub (official free API); the day chart is drawn from the app's own samples | free API key + symbols in Configuration (use SPY for the S&P 500) |
 | Calendar | Home Assistant calendar entities | any calendar integration |
 | Indoor air | Airthings integration | found automatically |
 | 3D printer | Bambu Lab integration (HACS) | found automatically |

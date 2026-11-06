@@ -1,11 +1,12 @@
 """Data fetchers. Each returns plain data; view.py turns it into what's on screen."""
 import datetime as dt
 import json
+import os
 import urllib.parse
 import urllib.request
+from zoneinfo import ZoneInfo
 
-UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/140.0 Safari/537.36")
+UA = "epaper-dashboard (Home Assistant app)"
 
 
 def http_json(url, headers=None, timeout=15):
@@ -35,62 +36,121 @@ def weather(ctx, prev=None):
 
 
 # ---------------------------------------------------------------- markets
-def _yahoo(symbol):
-    err = None
-    for host in ("query1", "query2"):
-        try:
-            j = http_json(f"https://{host}.finance.yahoo.com/v8/finance/chart/"
-                          f"{urllib.parse.quote(symbol)}?range=1d&interval=5m")
-            r = j["chart"]["result"][0]
-            m = r["meta"]
-            closes = (r.get("indicators", {}).get("quote") or [{}])[0].get("close") or []
-            reg = (m.get("currentTradingPeriod") or {}).get("regular") or {}
-            return {
-                "price": float(m["regularMarketPrice"]),
-                "prev": float(m.get("chartPreviousClose") or m.get("previousClose")),
-                "series": [round(float(c), 4) for c in closes if c is not None],
-                "open_ts": reg.get("start"), "close_ts": reg.get("end"),
-                "source": "Yahoo",
-            }
-        except Exception as e:      # try the other host
-            err = e
-    raise err
+# Finnhub's free API (official, needs a free key): live quotes and the market's open/closed status.
+# The free plan has no intraday history, so the day chart is built from our own samples,
+# bucketed into 5-minute steps and kept in /data so a restart doesn't lose the morning.
+ET = ZoneInfo("America/New_York")
+BUCKET = 300
+SAMPLES = os.path.join(os.environ.get("DASH_DATA", "/data"), "market_samples.json")
 
 
-def _finnhub(symbol, key):
-    q = http_json(f"https://finnhub.io/api/v1/quote?symbol={urllib.parse.quote(symbol)}&token={key}")
-    if not q.get("c"):
-        raise ValueError(f"Finnhub has no quote for {symbol}")
-    return {"price": float(q["c"]), "prev": float(q["pc"]), "series": [],
-            "open_ts": None, "close_ts": None, "source": "Finnhub"}
+def _finnhub(path, key):
+    sep = "&" if "?" in path else "?"
+    return http_json(f"https://finnhub.io/api/v1{path}{sep}token={urllib.parse.quote(key)}")
+
+
+def _session(day):
+    """The regular US session (9:30-16:00 Eastern) on a date, as epoch seconds."""
+    return (int(dt.datetime.combine(day, dt.time(9, 30), ET).timestamp()),
+            int(dt.datetime.combine(day, dt.time(16, 0), ET).timestamp()))
+
+
+def _session_for(now, status):
+    """Today's session while it's on or still ahead; otherwise the next weekday's."""
+    today = now.astimezone(ET).date()
+    if today.weekday() < 5 and not (status or {}).get("holiday"):
+        o, c = _session(today)
+        ts = now.timestamp()
+        closed_early = status and o <= ts < c and status.get("isOpen") is False   # half days
+        if ts < c and not closed_early:
+            return o, c
+    d = today + dt.timedelta(days=1)
+    while d.weekday() >= 5:
+        d += dt.timedelta(days=1)
+    return _session(d)
+
+
+def _load_samples():
+    try:
+        with open(SAMPLES) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_samples(samples):
+    try:
+        with open(SAMPLES, "w") as f:
+            json.dump(samples, f)
+    except OSError:
+        pass
+
+
+def _day_chart(pts, o, c, now_ts, open_price):
+    """5-minute steps from the open up to now (or the close), each the last price seen in that step."""
+    if not pts:
+        return []
+    upto = min(int((min(now_ts, c) - o) // BUCKET), (c - o) // BUCKET - 1,
+               int((pts[-1][0] - o) // BUCKET))             # stop where our samples stop
+    vals, cur, j = [None] * (max(0, upto) + 1), None, 0
+    if open_price:
+        vals[0] = round(float(open_price), 4)      # the opening price anchors 9:30
+    for i in range(len(vals)):
+        end = o + (i + 1) * BUCKET
+        while j < len(pts) and pts[j][0] < end:
+            cur = pts[j][1]
+            j += 1
+        if cur is not None:
+            vals[i] = round(cur, 4)
+    return vals                                   # None = no sample yet (the line skips it)
 
 
 def markets(ctx, prev=None):
-    """Delayed quotes and today's 5-minute chart. Yahoo's chart endpoint needs no key;
-    Finnhub is a fallback if a key is set. A symbol that fails keeps its last quote."""
+    key = (ctx.opts.get("finnhub_api_key") or "").strip()
+    if not key:
+        raise RuntimeError("No Finnhub API key yet: get a free one at finnhub.io and add it in Configuration")
+    now = ctx.clock()
+    old = prev or {}
+    try:
+        status = _finnhub("/stock/market-status?exchange=US", key)
+    except Exception:
+        status = old.get("status")
+    o, c = _session_for(now, status)
+    in_session = o <= now.timestamp() < c
+    samples = old.get("samples") or _load_samples()
+    day = now.astimezone(ET).date().isoformat()
+
     quotes, errors = {}, []
-    old = (prev or {}).get("quotes", {})
     for s in ctx.opts.get("stocks", []):
         sym = s["symbol"].upper()
         try:
-            quotes[sym] = _yahoo(sym)
+            q = _finnhub(f"/quote?symbol={urllib.parse.quote(sym)}", key)
+            if not q.get("c") or not q.get("pc"):
+                raise ValueError("no quote (indexes like ^GSPC aren't on the free plan; try SPY)")
+            price, prev_close = float(q["c"]), float(q["pc"])
+            if in_session:
+                rec = samples.get(sym)
+                if not rec or rec.get("day") != day:
+                    rec = samples[sym] = {"day": day, "open": o, "close": c, "pts": []}
+                rec["pts"].append([int(now.timestamp()), price])
+            rec = samples.get(sym) or {}
+            series = _day_chart(rec.get("pts", []), rec.get("open", o), rec.get("close", c),
+                                now.timestamp(), q.get("o")) if rec else []
+            quotes[sym] = {"price": price, "prev": prev_close, "series": series,
+                           "open_ts": o, "close_ts": c, "source": "Finnhub"}
         except Exception as e:
-            key = ctx.opts.get("finnhub_api_key")
-            try:
-                if not key:
-                    raise
-                quotes[sym] = _finnhub(sym, key)
-            except Exception:
-                errors.append(f"{sym}: {e}")
-                if sym in old:
-                    quotes[sym] = old[sym]
+            errors.append(f"{sym}: {e}"[:160])
+            if sym in old.get("quotes", {}):
+                quotes[sym] = old["quotes"][sym]
+    if in_session:
+        _save_samples(samples)
     if errors and len(errors) == len(ctx.opts.get("stocks", [])):
         raise RuntimeError("; ".join(errors))      # all failed: keep the last result, show the error
-    return {"quotes": quotes, "errors": errors}
+    return {"quotes": quotes, "errors": errors, "status": status, "samples": samples}
 
 
 def market_open(mk, now_ts):
-    """True while the regular session is open, based on the exchange's own hours."""
+    """True while the regular session is open."""
     for q in (mk or {}).get("quotes", {}).values():
         if q.get("open_ts") and q.get("close_ts"):
             return q["open_ts"] <= now_ts < q["close_ts"]
@@ -110,7 +170,7 @@ def calendar(ctx, prev=None):
     cals = ctx.discovered.get("calendars") or []
     if not cals:
         return {"calendars": [], "events": []}
-    now = dt.datetime.now(ctx.tz)
+    now = ctx.clock()
     start, end = now - dt.timedelta(hours=12), now + dt.timedelta(days=4)
     events, errors, seen = [], [], set()
     for c in cals:
