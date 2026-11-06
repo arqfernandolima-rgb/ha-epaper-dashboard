@@ -1,5 +1,5 @@
 name: E-paper Dashboard
-version: "0.4.1"
+version: "0.4.2"
 slug: epaper_dashboard
 description: Draws the office e-paper dashboard and serves it to the ESP32 display
 url: https://github.com/arqfernandolima-rgb/ha-epaper-dashboard
@@ -31,6 +31,8 @@ options:
   refresh_minutes: 5
   clock: true
   alerts_right_away: true
+  garage_alerts: true
+  garage_alert_minutes: 10
   alerts: []
 schema:
   stocks:
@@ -44,6 +46,8 @@ schema:
   refresh_minutes: int(3,60)
   clock: bool
   alerts_right_away: bool
+  garage_alerts: bool
+  garage_alert_minutes: int(0,240)
   alerts:
     - entity: str
       state: str

@@ -23,6 +23,12 @@ configuration:
   alerts_right_away:
     name: Show new alerts right away
     description: A new alert (garage door, failed print) shows within 3 minutes instead of waiting for the next update.
+  garage_alerts:
+    name: Garage door alerts
+    description: Red banner when a garage door (MyQ or any other) has been left open. Found automatically.
+  garage_alert_minutes:
+    name: Garage open for (minutes)
+    description: How long a garage door has to stay open before the banner shows. 0 shows it right away.
   alerts:
     name: Alerts
     description: Red banners at the bottom of the Today column. Each one shows its text while the entity is in that state (e.g. cover.garage_door / open / Garage door open).

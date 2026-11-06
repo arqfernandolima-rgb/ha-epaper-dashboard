@@ -26,6 +26,7 @@ The display reads `http://<HA address>:8090/frame.epd` and only redraws when the
 | 3D printer | Bambu Lab integration (HACS) | found automatically |
 | Packages | Mail and Packages integration (HACS) | found automatically |
 | Health | Companion app Health Connect sensors | enable Daily steps, Sleep duration, Resting heart rate in the app |
+| Garage | any garage door (MyQ, ratgdo ...): banner after it's been open 10 minutes | found automatically |
 | Alerts | any entity and state | add in Configuration |
 
 The sidebar page shows a live preview, what was found in Home Assistant, and the status of each source. **Update now** draws a frame right away.

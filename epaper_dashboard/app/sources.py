@@ -11,7 +11,7 @@ import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
 
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 UA = f"epaper-dashboard/{VERSION} (+https://github.com/arqfernandolima-rgb/ha-epaper-dashboard)"
 
 
@@ -418,10 +418,23 @@ def discover(ctx, states):
             pass
     indoor["area"] = area
 
-    printer = o.get("printer") or first(ha.integration_entities("bambu_lab"),
-                                        lambda e: e.startswith("sensor.") and e.endswith("_print_status"))
-    if printer and printer.endswith("_print_status"):
-        printer = printer[: -len("_print_status")]
+    # Bambu Lab: the printer's sensors share a prefix (sensor.h2c_...); find it from any of the usual ones
+    bambu = [e for e in ha.integration_entities("bambu_lab") if e.startswith("sensor.")]
+    printer = o.get("printer")
+    if not printer:
+        for suffix in ("_print_status", "_print_progress", "_remaining_time", "_current_stage"):
+            hit = first(bambu, lambda e, sf=suffix: e.endswith(sf))
+            if hit:
+                printer = hit
+                break
+    for suffix in ("_print_status", "_print_progress", "_remaining_time", "_current_stage"):
+        if printer and printer.endswith(suffix):
+            printer = printer[: -len(suffix)]
+
+    # Garage doors (MyQ, ratgdo, Meross ...): covers marked as garage/gate, or with "garage" in the name
+    garages = sorted(e for e, st in states.items() if e.startswith("cover.") and (
+        st.get("attributes", {}).get("device_class") in ("garage", "gate")
+        or "garage" in e or "garage" in str(st.get("attributes", {}).get("friendly_name", "")).lower()))
 
     mail = ha.integration_entities("mail_and_packages")
     packages = {
@@ -445,4 +458,4 @@ def discover(ctx, states):
     weather_eid = o.get("weather_entity") or ("weather.forecast_home" if "weather.forecast_home" in states
                                               else next((e for e in states if e.startswith("weather.")), None))
     return {"indoor": indoor, "printer": printer, "packages": packages, "health": health, "calendars": cals,
-            "weather": weather_eid}
+            "weather": weather_eid, "garages": garages}

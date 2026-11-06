@@ -321,12 +321,28 @@ def build_packages(states, disc):
     return None
 
 
-def build_alerts(states, opts):
-    out = []
+def build_alerts(states, opts, disc=None, now=None):
+    out, handled = [], set()
     for a in opts.get("alerts", []):
+        handled.add(a.get("entity", ""))
         s = states.get(a.get("entity", ""))
         if s and str(s.get("state", "")).lower() == str(a.get("state", "")).lower():
             out.append(a.get("text") or a["entity"])
+    # garage doors left open (no setup needed): after N minutes, with the time it opened
+    if opts.get("garage_alerts", True) and now is not None:
+        wait = dt.timedelta(minutes=int(opts.get("garage_alert_minutes", 10)))
+        for eid in (disc or {}).get("garages", []):
+            s = states.get(eid)
+            if eid in handled or not s or s.get("state") != "open":
+                continue
+            since = dt.datetime.fromisoformat(s["last_changed"]).astimezone(now.tzinfo) if s.get("last_changed") else now
+            if now - since < wait:
+                continue
+            name = s.get("attributes", {}).get("friendly_name") or "Garage door"
+            if "garage" not in name.lower() and "gate" not in name.lower():
+                name += " (garage)"
+            day = "" if since.date() == now.date() else f"{since.strftime('%a')} "
+            out.append(f"{name} open since {day}{t12(since)}")
     return out
 
 
@@ -420,7 +436,7 @@ def _safe(name, fn, *args, default=None):
 
 def build(now, data, disc, opts, sticky, tomorrow):
     states = data.get("states") or {}
-    alerts = _safe("alerts", build_alerts, states, opts, default=[])
+    alerts = _safe("alerts", build_alerts, states, opts, disc, now, default=[])
     printer, p_alert = _safe("printer", build_printer, states, disc, now, default=(None, None))
     if p_alert:
         alerts.append(p_alert)
