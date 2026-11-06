@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>E-paper dashboard</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--fg:#1d1d1b;--mute:#6b6a66;--line:#e2e0da;--ok:#2e7d32;--bad:#c62828;--accent:#1d1d1b}
+@media (prefers-color-scheme:dark){:root{--bg:#141413;--card:#1e1e1c;--fg:#ecebe6;--mute:#9b9a94;--line:#33322f;--ok:#81c784;--bad:#ef9a9a;--accent:#ecebe6}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1440px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:20px;margin:0}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.meta{color:var(--mute);font-size:14px}
+button{font:inherit;font-weight:600;border:1px solid var(--accent);background:var(--accent);color:var(--bg);border-radius:8px;padding:8px 14px;cursor:pointer}
+button[disabled]{opacity:.6;cursor:default}
+.panel{background:#d9d6cc;border-radius:10px;padding:12px;overflow:auto}
+.panel img{display:block;width:100%;max-width:1360px;height:auto;margin:0 auto;border-radius:2px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.card h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);margin:0 0 8px}
+table{width:100%;border-collapse:collapse}
+td{padding:6px 0;border-top:1px solid var(--line);vertical-align:top}
+tr:first-child td{border-top:0}
+td:first-child{width:38%;color:var(--mute);padding-right:10px}
+.ok{color:var(--ok);font-weight:600}.bad{color:var(--bad);font-weight:600}
+code{font-size:13px;overflow-wrap:anywhere}
+.err{color:var(--bad);font-size:13px;margin-top:2px}
+.none{color:var(--mute)}
+</style></head><body><main>
+<div class="top">
+  <div><h1>E-paper dashboard</h1>
+    <div class="meta">{{ s.state | capitalize }} · last new frame {{ s.drawn }}{% if s.render_secs %} · drew in {{ s.render_secs }}s{% endif %}</div></div>
+  <button id="upd" onclick="upd()">Update now</button>
+</div>
+<div class="panel">{% if s.etag %}<img id="pv" src="preview.png?{{ s.etag | replace('"', '') }}" alt="What the display shows">{% else %}<p class="none">Nothing drawn yet.</p>{% endif %}</div>
+{% if s.render_error %}<p class="bad">Drawing failed: {{ s.render_error }}</p>{% endif %}
+
+<div class="grid">
+  <div class="card"><h2>Display</h2><table>
+    <tr><td>Last check-in</td><td>{% if s.poll %}{{ s.poll.when }} · {{ s.poll.what }} <span class="meta">({{ s.poll.ip }})</span>{% else %}<span class="none">Not yet. Point the display at port 8090.</span>{% endif %}</td></tr>
+    <tr><td>Frame address</td><td><code>http://&lt;HA address&gt;:8090/frame.epd</code></td></tr>
+    <tr><td>Quiet hours</td><td>{{ s.quiet }}</td></tr>
+    <tr><td>Refresh</td><td>Every {{ s.every }} min, on round times{% if s.clock %}, with the flip clock{% else %}, skipped when nothing changed{% endif %}{% if s.alerts_now %}; new alerts show within 3 min{% endif %}</td></tr>
+    <tr><td>Colors</td><td>{% for k, v in s.colors.items() %}{{ k }} {{ '%.1f' | format(v / 6528) }}%{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
+    <tr><td>Downloads</td><td><a href="panel.png" target="_blank">panel.png</a> · <a href="frame.epd">frame.epd</a></td></tr>
+  </table></div>
+  <div class="card"><h2>Data</h2><table>
+    {% for x in s.sources %}<tr><td>{{ x.name }}</td><td>{% if x.ok %}<span class="ok">OK</span> · {{ x.when }}{% elif x.error %}<span class="bad">Error</span> · last good {{ x.when }}<div class="err">{{ x.error }}</div>{% else %}<span class="none">waiting</span>{% endif %}</td></tr>{% endfor %}
+    <tr><td>Stocks</td><td>{{ s.stocks or '—' }}</td></tr>
+  </table></div>
+  <div class="card"><h2>Found in Home Assistant</h2><table>
+    {% for name, v in s.found %}<tr><td>{{ name }}</td><td>{% if v %}{% for e in v %}<code>{{ e }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}<span class="none">not found</span>{% endif %}</td></tr>{% endfor %}
+  </table><p class="meta" style="margin:10px 0 0">Wrong pick or missing? Set it in this app's Configuration tab.</p></div>
+</div>
+</main>
+<script>
+function upd(){const b=document.getElementById('upd');b.disabled=true;b.textContent='Drawing…';
+  fetch('update',{method:'POST'}).then(()=>setTimeout(()=>location.reload(),12000));}
+setTimeout(()=>location.reload(),60000);
+</script>
+</body></html>

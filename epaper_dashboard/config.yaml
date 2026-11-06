@@ -1,0 +1,59 @@
+name: E-paper Dashboard
+version: "0.3.0"
+slug: epaper_dashboard
+description: Draws the office e-paper dashboard and serves it to the ESP32 display
+url: https://github.com/arqfernandolima-rgb/ha-epaper-dashboard
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+homeassistant_api: true
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:monitor-dashboard
+panel_title: E-paper
+ports:
+  8090/tcp: 8090
+ports_description:
+  8090/tcp: "Frame for the display: http://<HA address>:8090/frame.epd"
+options:
+  stocks:
+    - symbol: ADSK
+      name: Autodesk
+    - symbol: ZTS
+      name: Zoetis
+  calendars: []
+  quiet_hours_start: 0
+  quiet_hours_end: 6
+  steps_goal: 8000
+  refresh_minutes: 5
+  clock: true
+  alerts_right_away: true
+  alerts: []
+schema:
+  stocks:
+    - symbol: str
+      name: str?
+  calendars:
+    - str
+  quiet_hours_start: int(0,23)
+  quiet_hours_end: int(0,23)
+  steps_goal: int(500,100000)
+  refresh_minutes: int(3,60)
+  clock: bool
+  alerts_right_away: bool
+  alerts:
+    - entity: str
+      state: str
+      text: str
+  finnhub_api_key: password?
+  indoor_temperature: str?
+  indoor_humidity: str?
+  indoor_voc: str?
+  printer: str?
+  packages: str?
+  steps: str?
+  sleep: str?
+  resting_heart_rate: str?

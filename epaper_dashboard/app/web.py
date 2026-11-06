@@ -1,0 +1,187 @@
+"""Two small web servers.
+
+:8090  the frame for the display (LAN). Only /frame.epd, with ETag / 304.
+:8099  the status page shown in HA's sidebar (ingress). Only accepts the Supervisor.
+"""
+import datetime as dt
+import json
+import logging
+import os
+import threading
+import time
+import urllib.parse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+import render
+
+log = logging.getLogger("dash")
+INGRESS_PEER = "172.30.32.2"
+_env = Environment(loader=FileSystemLoader(os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")),
+                   autoescape=select_autoescape(["html"]))
+
+
+class _Base(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    server_version = "epaper-dashboard"
+
+    def log_message(self, fmt, *args):
+        log.debug("%s %s", self.address_string(), fmt % args)
+
+    def send(self, code, body=b"", ctype="text/plain; charset=utf-8", headers=None, head=False):
+        self.send_response(code)
+        if code != 304:
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
+        self.end_headers()
+        if body and not head and code != 304:
+            self.wfile.write(body)
+
+    @property
+    def route(self):
+        return urllib.parse.urlsplit(self.path).path
+
+
+def frame_handler(app):
+    class H(_Base):
+        def _frame(self, head=False):
+            now = app.now()
+            if not head:
+                try:
+                    app.ensure_frame(now)            # in case the display is early or the loop is late
+                except Exception as e:
+                    log.warning("drawing on request failed: %s", e)
+            with app.lock:
+                frame, tag = app.frame, app.etag
+            ip = self.client_address[0]
+            hdr = {"X-Poll-In": str(app.poll_in(now))}
+            if frame is None:
+                app.note_poll(ip, 503)
+                return self.send(503, b"no frame yet\n", headers={"Retry-After": "60", "X-Poll-In": "60"}, head=head)
+            have = self.headers.get("If-None-Match")
+            if have == tag:
+                app.note_poll(ip, 304)
+                return self.send(304, headers={"ETag": tag, **hdr})
+            gap = now.timestamp() - app.last_new_served
+            if have and gap < 175:                    # panel needs 3 min between refreshes
+                app.note_poll(ip, 304)
+                hdr["X-Poll-In"] = str(int(175 - gap) + 1)
+                return self.send(304, headers={"ETag": have, **hdr})
+            if not head:
+                app.last_new_served = now.timestamp()
+            app.note_poll(ip, 200)
+            self.send(200, frame, "application/octet-stream", {"ETag": tag, "Cache-Control": "no-cache", **hdr}, head)
+
+        def do_GET(self):
+            if self.route == "/frame.epd":
+                return self._frame()
+            if self.route == "/":
+                return self.send(200, b"E-paper dashboard. The display reads /frame.epd\n")
+            self.send(404, b"not found\n")
+
+        def do_HEAD(self):
+            if self.route == "/frame.epd":
+                return self._frame(head=True)
+            self.send(404, b"", head=True)
+    return H
+
+
+def _ago(ts):
+    if not ts:
+        return "never"
+    s = int(time.time() - ts)
+    return f"{s}s ago" if s < 90 else f"{s // 60} min ago" if s < 5400 else f"{s // 3600} h ago"
+
+
+def status(app):
+    tz = app.ctx.tz
+    def t(iso):
+        if not iso:
+            return "never"
+        d = dt.datetime.fromisoformat(iso).astimezone(tz)
+        return d.strftime("%a ") + f"{d.hour % 12 or 12}:{d.minute:02d} {'AM' if d.hour < 12 else 'PM'}"
+    srcs = []
+    for s in app.sources.values():
+        partial = s.data.get("errors") if isinstance(s.data, dict) and not s.error else None
+        srcs.append({"name": s.name, "ok": s.error is None and s.data is not None and not partial,
+                     "when": _ago(s.ok_at), "error": s.error or ("; ".join(partial) if partial else None)})
+    d = app.ctx.discovered or {}
+    found = [
+        ("Indoor air", [v for k, v in (d.get("indoor") or {}).items() if v and k != "area"]),
+        ("3D printer", [d["printer"] + "_*"] if d.get("printer") else []),
+        ("Packages", [v for v in (d.get("packages") or {}).values() if v]),
+        ("Health", [v for v in (d.get("health") or {}).values() if v]),
+        ("Calendars", list(d.get("calendars") or [])),
+    ]
+    poll = app.last_poll
+    return {
+        "state": app.state, "drawn": t(app.drawn_at), "render_secs": app.render_secs,
+        "render_error": app.render_error, "etag": app.etag, "colors": app.colors,
+        "poll": ({"when": t(poll["at"]), "ip": poll["ip"],
+                  "what": {200: "got a new frame", 304: "no change", 503: "no frame yet"}.get(poll["code"], poll["code"])}
+                 if poll else None),
+        "quiet": f"{app.opts.get('quiet_hours_start', 0)}:00 to {app.opts.get('quiet_hours_end', 6)}:00",
+        "clock": app.clock_on(),
+        "every": app.every(),
+        "alerts_now": bool(app.opts.get("alerts_right_away", True)),
+        "sources": srcs, "found": found,
+        "stocks": ", ".join(s["symbol"] for s in app.opts.get("stocks", [])),
+        "version": os.environ.get("DASH_VERSION", ""),
+    }
+
+
+def ingress_handler(app):
+    class I(_Base):
+        def _ok(self):
+            if app.dev or self.client_address[0] == INGRESS_PEER:
+                return True
+            self.send(403, b"forbidden\n")
+            return False
+
+        def do_GET(self):
+            if not self._ok():
+                return
+            r = self.route.rstrip("/") or "/"
+            if r == "/":
+                html = _env.get_template("status.html").render(s=status(app))
+                return self.send(200, html.encode(), "text/html; charset=utf-8")
+            if r == "/status.json":
+                return self.send(200, json.dumps(status(app), default=str).encode(), "application/json")
+            if r in ("/preview.png", "/panel.png"):
+                with app.lock:
+                    img = app.sim_png if r == "/preview.png" else app.panel_png
+                if not img:
+                    return self.send(404, b"not drawn yet\n")
+                return self.send(200, img, "image/png", {"Cache-Control": "no-store"})
+            if r == "/frame.epd":
+                with app.lock:
+                    f = app.frame
+                if not f:
+                    return self.send(404, b"not drawn yet\n")
+                return self.send(200, f, "application/octet-stream",
+                                 {"Content-Disposition": 'attachment; filename="frame.epd"'})
+            self.send(404, b"not found\n")
+
+        def do_POST(self):
+            if not self._ok():
+                return
+            n = int(self.headers.get("Content-Length") or 0)
+            if n:
+                self.rfile.read(n)
+            if self.route.rstrip("/") == "/update":
+                app.update_now.set()
+                return self.send(204)
+            self.send(404, b"not found\n")
+    return I
+
+
+def start(app):
+    for port, handler in ((int(os.environ.get("DASH_FRAME_PORT", 8090)), frame_handler(app)),
+                          (int(os.environ.get("DASH_INGRESS_PORT", 8099)), ingress_handler(app))):
+        srv = ThreadingHTTPServer(("0.0.0.0", port), handler)
+        srv.daemon_threads = True
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        log.info("listening on :%d", port)

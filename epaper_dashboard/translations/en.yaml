@@ -1,0 +1,57 @@
+configuration:
+  stocks:
+    name: Stocks
+    description: Ticker symbols to show, top to bottom, with an optional display name. Four or more switch to compact rows.
+  calendars:
+    name: Calendars
+    description: Calendar entities to show (e.g. calendar.autodesk). Leave empty to use every calendar in Home Assistant.
+  quiet_hours_start:
+    name: Quiet hours start
+    description: Hour (0-23) when the display stops changing. The last frame before it shows tomorrow.
+  quiet_hours_end:
+    name: Quiet hours end
+    description: Hour (0-23) when updates resume.
+  steps_goal:
+    name: Daily steps goal
+    description: Fills the steps bar in the Health widget.
+  refresh_minutes:
+    name: Refresh every (minutes)
+    description: How often the screen updates, on round times (5 means :00, :05, :10 ...). Each update flashes the panel for about 21 seconds. 3 is the panel's minimum.
+  clock:
+    name: Flip clock
+    description: Shows the time of each update in the Today column. With it on, every update happens; with it off, updates where nothing changed are skipped.
+  alerts_right_away:
+    name: Show new alerts right away
+    description: A new alert (garage door, failed print) shows within 3 minutes instead of waiting for the next update.
+  alerts:
+    name: Alerts
+    description: Red banners at the bottom of the Today column. Each one shows its text while the entity is in that state (e.g. cover.garage_door / open / Garage door open).
+  finnhub_api_key:
+    name: Finnhub API key (optional)
+    description: Backup quote source if Yahoo stops answering. Free key at finnhub.io.
+  indoor_temperature:
+    name: Indoor temperature entity (optional)
+    description: Only needed if the Airthings sensor isn't found automatically.
+  indoor_humidity:
+    name: Indoor humidity entity (optional)
+    description: Only needed if the Airthings sensor isn't found automatically.
+  indoor_voc:
+    name: Indoor VOC entity (optional)
+    description: Only needed if the Airthings sensor isn't found automatically.
+  printer:
+    name: 3D printer (optional)
+    description: The printer's print status entity (e.g. sensor.h2c_print_status), if it isn't found automatically.
+  packages:
+    name: Packages entity (optional)
+    description: A sensor whose number is packages arriving today, if Mail and Packages isn't installed.
+  steps:
+    name: Steps entity (optional)
+    description: Daily steps sensor, if the Health Connect one isn't found automatically.
+  sleep:
+    name: Sleep entity (optional)
+    description: Sleep duration sensor (minutes or hours).
+  resting_heart_rate:
+    name: Resting heart rate entity (optional)
+    description: Resting heart rate sensor.
+network:
+  8090/tcp: Frame for the display (http://<HA address>:8090/frame.epd)

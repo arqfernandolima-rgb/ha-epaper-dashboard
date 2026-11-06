@@ -1,0 +1,195 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+@font-face{font-family:Barlow;src:url({{ static }}/fonts/barlow-latin-400-normal.woff2);font-weight:400}
+@font-face{font-family:Barlow;src:url({{ static }}/fonts/barlow-latin-500-normal.woff2);font-weight:500}
+@font-face{font-family:Barlow;src:url({{ static }}/fonts/barlow-latin-600-normal.woff2);font-weight:600}
+@font-face{font-family:Barlow;src:url({{ static }}/fonts/barlow-latin-700-normal.woff2);font-weight:700}
+@font-face{font-family:Barlow;src:url({{ static }}/fonts/barlow-latin-700-normal.woff2);font-weight:800}
+:root{--k:#000;--w:#fff;--y:#ff0;--r:#f00}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{width:1360px;height:480px;overflow:hidden;background:var(--w);color:var(--k);
+  font-family:Barlow,"DejaVu Sans";font-weight:500;font-feature-settings:'tnum' 1;-webkit-font-smoothing:none}
+.ic{display:block;flex:none}
+.lbl{font-size:16px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+.hint{font-size:16px;font-weight:600}
+.chip{display:inline-flex;align-items:center;gap:5px;font-weight:700;padding:3px 9px 4px;line-height:1;white-space:nowrap;flex:none}
+.chip svg{display:block}
+.up{background:var(--y);color:var(--k)} .dn{background:var(--r);color:var(--w)}
+.tag.fair{background:var(--y);padding:0 5px}
+.tag.poor{background:var(--r);color:var(--w);padding:0 5px}
+.bar{height:16px;border:2px solid var(--k);position:relative}
+.bar>i{position:absolute;left:0;top:0;bottom:0;background:var(--k)}
+.ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+
+.g{display:grid;grid-template-columns:394px repeat(3,1fr);height:480px;padding:22px 0 22px 24px}
+.col{border-left:2px solid #000;padding:0 22px;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.col:first-child{border-left:0;padding-left:0}
+.col:last-child{padding-right:24px}
+/* widgets stack inside a column; a rule separates them */
+.w{display:flex;flex-direction:column;min-width:0}
+.w+.w{border-top:2px solid #000;margin-top:14px;padding-top:12px}
+.w.s{flex-direction:row;justify-content:space-between;align-items:baseline}
+.w.s .v,.v20{font-size:20px;font-weight:700}
+.push{margin-top:auto}
+
+.head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.day{font-size:46px;font-weight:800;letter-spacing:-.02em;line-height:1;white-space:nowrap}
+.day.long{font-size:40px}
+.dt{font-size:26px;font-weight:500;margin-top:4px;white-space:nowrap}
+/* split-flap clock: black cards, a white split across the middle, hinge pins at the sides */
+.flap{display:flex;gap:8px;flex:none}
+.card{position:relative;background:#000;color:#fff;border-radius:6px;height:78px;min-width:72px;padding:0 7px;
+  display:flex;align-items:center;justify-content:center;font-size:60px;font-weight:700;letter-spacing:-.02em;line-height:1}
+.card::after{content:"";position:absolute;left:0;right:0;top:38px;height:2px;background:#fff}
+.card i{position:absolute;top:33px;width:3px;height:12px;background:#000}
+.card i:first-child{left:-3px}.card i:last-child{right:-3px}
+.nextc{background:var(--y);border:3px solid #000;padding:10px 14px;margin-top:20px}
+.nextc.none{background:var(--w);border-width:2px}
+.nt{font-size:32px;font-weight:800;letter-spacing:-.01em;margin:4px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nextc.none .nt{font-size:24px;font-weight:700;margin:0}
+.nm{font-size:19px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.li{display:flex;gap:14px;font-size:20px;font-weight:500;margin-top:8px}
+.li b{width:96px;flex:none;font-weight:700}
+.one{display:flex;align-items:center;gap:10px;font-size:19px;font-weight:600;border-top:2px solid #000;padding-top:12px}
+.alert{display:flex;align-items:center;gap:8px;background:var(--r);color:var(--w);font-size:18px;font-weight:700;padding:7px 12px;margin-top:10px}
+.alert .ic{stroke:#fff}
+.bottom>:first-child{margin-top:0}
+
+.big{font-size:60px;font-weight:700;letter-spacing:-.03em;line-height:1}
+.sub{font-size:19px;font-weight:500;display:flex;align-items:center;gap:8px;margin-top:4px;white-space:nowrap}
+.hourly{display:flex;justify-content:space-between;margin-top:12px}
+.hourly div{text-align:center;font-size:16px;font-weight:600}
+.hourly b{display:block;font-size:20px;font-weight:700}
+.cells{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
+.cell{padding:3px 6px 4px;border:2px solid transparent}
+.cell span{display:block;font-size:16px;font-weight:600}
+.cell b{display:block;font-size:22px;font-weight:700;letter-spacing:-.01em}
+.cell.fair{background:var(--y);border-color:#000}
+.cell.poor{background:var(--r);color:#fff}
+
+.mh{display:flex;justify-content:space-between;align-items:baseline}
+.mrow{display:flex;align-items:center;gap:10px;border-top:2px solid #000;padding:10px 0;flex:1;min-height:0}
+.mrow.first{border-top:0}
+.mrow.last{padding-bottom:0}
+.tk{font-size:18px;font-weight:800;letter-spacing:.06em}
+.nm2{font-size:16px;font-weight:600;margin-left:6px}
+.px{font-size:40px;font-weight:700;letter-spacing:-.03em;line-height:1.05}
+.cmp .px{font-size:26px;line-height:1.1}
+.cmp .mrow{padding:6px 0}
+
+.row{display:flex;justify-content:space-between;align-items:baseline;font-size:18px;font-weight:600;margin:8px 0 4px}
+.steps{font-size:30px;font-weight:700;letter-spacing:-.02em}
+.small{font-size:16px;font-weight:600}
+.job{font-size:18px;font-weight:600;margin-top:4px}
+</style></head><body><div class="g">
+
+{#- ============ TODAY ============ #}
+{%- set t = vm.today %}
+<div class="col">
+  <div class="head">
+    <div><div class="day{% if t.day | length > 8 %} long{% endif %}">{{ t.day }}</div><div class="dt">{{ t.date }}</div></div>
+    {%- if clock %}
+    <div class="flap"><div class="card"><i></i>{{ clock.h }}<i></i></div><div class="card"><i></i>{{ clock.m }}<i></i></div></div>
+    {%- endif %}
+  </div>
+  {%- if t.next %}
+  <div class="nextc"><div class="lbl">{{ t.next.label }}</div><div class="nt">{{ t.next.title }}</div><div class="nm">{{ t.next.meta }}</div></div>
+  {%- else %}
+  <div class="nextc none"><div class="nt">{{ t.note }}</div></div>
+  {%- endif %}
+  {%- if t.later %}
+  <div style="margin-top:16px"><div class="lbl">Later</div>
+    {%- for e in t.later %}
+    <div class="li"><b>{{ e.when }}</b><span class="ell">{{ e.title }}</span></div>
+    {%- endfor %}
+  </div>
+  {%- endif %}
+  {%- if vm.packages or vm.alerts %}
+  <div class="bottom push">
+    {%- if vm.packages %}<div class="one">{{ icon('package', 26) }}<span class="ell">{{ vm.packages }}</span></div>{% endif %}
+    {%- for a in vm.alerts %}<div class="alert">{{ icon('triangle-alert', 22) }}<span class="ell">{{ a }}</span></div>{% endfor %}
+  </div>
+  {%- endif %}
+</div>
+
+{#- ============ WEATHER ============ #}
+<div class="col">
+  {%- set w = vm.weather %}
+  <div class="w">
+    {%- if w %}
+    <div class="lbl">{{ w.label }}</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:8px">{{ icon(w.icon, 50) }}<div class="big">{{ w.temp }}</div></div>
+    <div class="sub" style="margin-top:8px">{{ w.hilo }}</div>
+    <div class="sub">{{ w.rain }}{% if w.wind %} · {{ w.wind }}{% endif %}</div>
+    {%- if w.aqi or w.uv %}
+    <div class="sub"><span>{% if w.aqi %}<span class="tag {{ w.aqi.lvl }}">{{ w.aqi.v }}</span>{% endif %}{% if w.aqi and w.uv %} · {% endif %}{% if w.uv %}<span class="tag {{ w.uv.lvl }}">{{ w.uv.v }}</span>{% endif %}</span></div>
+    {%- endif %}
+    <div class="hourly">{% for h in w.hours %}<div>{{ h.t }}<b>{{ h.v }}</b></div>{% endfor %}</div>
+    {%- else %}
+    <div class="lbl">Weather</div><div class="sub" style="margin-top:8px">Waiting for forecast</div>
+    {%- endif %}
+  </div>
+  {%- if vm.indoor %}
+  <div class="w">
+    <div class="mh"><span class="lbl">Indoor air</span><span class="hint">{{ vm.indoor.area }}</span></div>
+    <div class="cells">
+      {%- for c in vm.indoor.cells %}<div class="cell {{ c.lvl }}"><span>{{ c.k }}</span><b>{{ c.v }}</b></div>{% endfor %}
+    </div>
+  </div>
+  {%- endif %}
+</div>
+
+{#- ============ MARKETS ============ #}
+{%- set m = vm.markets %}
+{%- set n = (m.rows | length) if m else 0 %}
+{%- set sh = 44 if n >= 4 else (70 if n == 3 else (96 if n == 2 else 120)) %}
+<div class="col{% if n >= 4 %} cmp{% endif %}">
+  {%- if m %}
+  <div class="mh"><span class="lbl">Markets</span><span class="hint">{{ m.status }}</span></div>
+  {%- for r in m.rows %}
+  <div class="mrow{% if loop.first %} first{% endif %}{% if loop.last %} last{% endif %}">
+    <div style="flex:1;min-width:0"><div class="ell"><span class="tk">{{ r.sym }}</span><span class="nm2">{{ r.name }}</span></div><div class="px">{{ r.price }}</div>
+      <div class="sub">{% if r.pct %}<span class="chip {{ 'up' if r.up else 'dn' }}">{{ tri(r.up) }}{{ r.pct }}</span>{{ r.chg }}{% endif %}</div></div>
+    <div>{{ spark(r.sym, r.series, r.base, 100 if n >= 4 else 112, sh, r.slots) }}</div>
+  </div>
+  {%- endfor %}
+  {%- endif %}
+</div>
+
+{#- ============ YOU ============ #}
+<div class="col">
+  {%- set h = vm.health %}
+  {%- if h %}
+  <div class="w">
+    <div class="lbl">Health</div>
+    {%- if h.steps %}
+    <div style="display:flex;align-items:baseline;gap:8px;margin-top:6px"><span style="align-self:center">{{ icon('footprints', 26) }}</span><span class="steps">{{ h.steps }}</span><span class="small">steps</span><span style="font-size:17px;font-weight:600;margin-left:auto">{{ h.pct }}%</span></div>
+    <div class="bar" style="height:12px;margin-top:4px"><i style="width:{{ h.pct }}%"></i></div>
+    {%- endif %}
+    {%- if h.sleep or h.rhr %}
+    <div class="sub" style="margin-top:8px">{% if h.sleep %}{{ icon('moon', 22) }}<b>{{ h.sleep }}</b>{% endif %}{% if h.rhr %}{{ icon('heart-pulse', 22) }}<b>{{ h.rhr }}</b> rest{% endif %}</div>
+    {%- endif %}
+  </div>
+  {%- endif %}
+  {%- set p = vm.printer %}
+  {%- if p %}
+  {%- if p.pct is not none %}
+  <div class="w">
+    <div class="mh"><span class="lbl">3D printer</span><span class="v20">{{ p.pct_text }}</span></div>
+    {%- if p.job %}<div class="job ell">{{ p.job }}</div>{% endif %}
+    <div class="bar" style="margin-top:6px"><i style="width:{{ p.pct }}%"></i></div>
+    <div class="small" style="margin-top:6px">{% if p.phase == 'paused' %}<span class="chip up">Paused</span>{% else %}{{ p.line }}{% endif %}</div>
+  </div>
+  {%- elif p.phase in ('finished', 'failed') %}
+  <div class="w">
+    <div class="mh"><span class="lbl">3D printer</span>{% if p.phase == 'failed' %}<span class="chip dn">Failed</span>{% else %}<span class="v20">Done</span>{% endif %}</div>
+    {%- if p.job %}<div class="job ell">{{ p.job }}</div>{% endif %}
+  </div>
+  {%- else %}
+  <div class="w s"><span class="lbl">3D printer</span><span class="v">Idle</span></div>
+  {%- endif %}
+  {%- endif %}
+</div>
+
+</div></body></html>
