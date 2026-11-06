@@ -56,6 +56,14 @@ class HA:
     def calendars(self):
         return self.get("/api/calendars")
 
+    def state(self, entity_id):
+        return self.get(f"/api/states/{urllib.parse.quote(entity_id)}")
+
+    def service_response(self, domain, service, data):
+        """Call a service that returns data (e.g. weather.get_forecasts)."""
+        out = json.loads(self._req("POST", f"/api/services/{domain}/{service}?return_response", data))
+        return out.get("service_response", out)
+
     def calendar_events(self, entity_id, start, end):
         q = urllib.parse.urlencode({"start": start.isoformat(), "end": end.isoformat()})
         return self.get(f"/api/calendars/{urllib.parse.quote(entity_id)}?{q}")

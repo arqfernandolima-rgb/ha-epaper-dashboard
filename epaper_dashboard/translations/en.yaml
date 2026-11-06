@@ -35,6 +35,9 @@ configuration:
   snaptrade_consumer_key:
     name: SnapTrade consumer key (portfolio)
     description: The secret key that goes with the client ID. Read-only access to your accounts.
+  weather_entity:
+    name: Backup weather entity (optional)
+    description: Used when Open-Meteo doesn't answer. Defaults to Home Assistant's own forecast (weather.forecast_home).
   indoor_temperature:
     name: Indoor temperature entity (optional)
     description: Only needed if the Airthings sensor isn't found automatically.

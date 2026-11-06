@@ -6,23 +6,46 @@ import hmac
 import json
 import os
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
 
-UA = "epaper-dashboard (Home Assistant app)"
+VERSION = "0.4.1"
+UA = f"epaper-dashboard/{VERSION} (+https://github.com/arqfernandolima-rgb/ha-epaper-dashboard)"
 
 
-def http_json(url, headers=None, timeout=15):
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json", **(headers or {})})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read())
+def http_json(url, headers=None, timeout=15, tries=2):
+    """GET JSON. Retries once on a server error or dropped connection, and puts the
+    server's own words in the error (so the status page says *why* it refused)."""
+    host = urllib.parse.urlsplit(url).hostname
+    for attempt in range(tries):
+        req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json", **(headers or {})})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            try:
+                said = " ".join(e.read(400).decode("utf-8", "replace").split())[:180]
+            except Exception:
+                said = ""
+            if e.code < 500 or attempt == tries - 1:
+                raise RuntimeError(f"HTTP {e.code} from {host}" + (f": {said}" if said else "")) from None
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            if attempt == tries - 1:
+                raise RuntimeError(f"{host}: {getattr(e, 'reason', e)}") from None
+        time.sleep(2)
 
 
 # ---------------------------------------------------------------- weather
+def _qs(params):
+    return urllib.parse.urlencode(params, safe=",/")      # commas and slashes as in Open-Meteo's own docs
+
+
 def weather(ctx, prev=None):
-    """Open-Meteo forecast + air quality for HA's home location. Free, no key."""
-    base = {"latitude": ctx.lat, "longitude": ctx.lon, "timezone": ctx.tz_name}
+    """Open-Meteo forecast + air quality for HA's home location (free, no key).
+    If Open-Meteo won't answer, fall back to Home Assistant's own weather entity (Met.no)."""
+    base = {"latitude": round(ctx.lat, 4), "longitude": round(ctx.lon, 4), "timezone": ctx.tz_name}
     p = dict(base,
              current="temperature_2m,weather_code,is_day,wind_speed_10m,wind_gusts_10m",
              hourly="temperature_2m,precipitation_probability,weather_code,uv_index,is_day",
@@ -30,13 +53,86 @@ def weather(ctx, prev=None):
              forecast_days=3)
     if ctx.imperial:
         p.update(temperature_unit="fahrenheit", wind_speed_unit="mph")
-    forecast = http_json("https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode(p))
+    errors, source = [], "Open-Meteo"
     try:
-        aq = http_json("https://air-quality-api.open-meteo.com/v1/air-quality?"
-                       + urllib.parse.urlencode(dict(base, current="us_aqi")))
+        forecast = http_json("https://api.open-meteo.com/v1/forecast?" + _qs(p))
+    except Exception as e:
+        try:
+            forecast, why = _ha_weather(ctx), "no weather entity in Home Assistant"
+        except Exception as e2:
+            forecast, why = None, str(e2)
+        if forecast is None:
+            raise RuntimeError(f"Open-Meteo: {e} (backup: {why})") from None
+        errors.append(f"Open-Meteo: {e}; showing Home Assistant's forecast instead")
+        source = "Home Assistant"
+    try:
+        aq = http_json("https://air-quality-api.open-meteo.com/v1/air-quality?" + _qs(dict(base, current="us_aqi")))
     except Exception:
         aq = (prev or {}).get("aq")          # keep the last reading if only AQI failed
-    return {"forecast": forecast, "aq": aq, "imperial": ctx.imperial}
+    return {"forecast": forecast, "aq": aq, "imperial": ctx.imperial, "source": source, "errors": errors}
+
+
+# HA weather conditions -> WMO codes (what the Open-Meteo-shaped view expects)
+HA_WMO = {"sunny": 0, "clear-night": 0, "partlycloudy": 2, "cloudy": 3, "windy": 3, "windy-variant": 3,
+          "exceptional": 3, "fog": 45, "rainy": 61, "pouring": 65, "snowy": 71, "snowy-rainy": 67,
+          "hail": 96, "lightning": 95, "lightning-rainy": 95}
+
+
+def _ha_weather(ctx):
+    """Home Assistant's weather entity (usually Met.no's weather.forecast_home), reshaped like Open-Meteo."""
+    eid = ctx.opts.get("weather_entity") or (ctx.discovered or {}).get("weather")
+    if not eid:
+        return None
+    st = ctx.ha.state(eid)
+    a = st.get("attributes", {})
+    fc = {}
+    for kind in ("hourly", "daily"):
+        try:
+            fc[kind] = ctx.ha.service_response("weather", "get_forecasts",
+                                               {"entity_id": eid, "type": kind})[eid]["forecast"]
+        except Exception:
+            fc[kind] = []
+    try:
+        day = ctx.ha.state("sun.sun").get("state") == "above_horizon"
+    except Exception:
+        day = 7 <= ctx.clock().hour < 18
+    now = ctx.clock()
+
+    def local(t):
+        return dt.datetime.fromisoformat(t).astimezone(ctx.tz)
+
+    hours = [(local(f["datetime"]), f) for f in fc["hourly"]]
+    hourly = {"time": [t.strftime("%Y-%m-%dT%H:%M") for t, _ in hours],
+              "temperature_2m": [f.get("temperature") for _, f in hours],
+              "precipitation_probability": [f.get("precipitation_probability") or 0 for _, f in hours],
+              "weather_code": [HA_WMO.get(f.get("condition"), 3) for _, f in hours],
+              "uv_index": [f.get("uv_index") or 0 for _, f in hours],
+              "is_day": [0 if f.get("condition") == "clear-night" else 1 for _, f in hours]}
+    by_day = {local(f["datetime"]).date(): f for f in fc["daily"]}
+    daily = {"time": [], "weather_code": [], "temperature_2m_max": [], "temperature_2m_min": [],
+             "precipitation_probability_max": [], "uv_index_max": []}
+    for k in range(3):
+        d = now.date() + dt.timedelta(days=k)
+        f = by_day.get(d)
+        temps = [x.get("temperature") for t, x in hours if t.date() == d and x.get("temperature") is not None]
+        if k == 0 and a.get("temperature") is not None:
+            temps.append(a["temperature"])
+        hi = f.get("temperature") if f else (max(temps) if temps else None)
+        lo = f.get("templow") if f and f.get("templow") is not None else (min(temps) if temps else None)
+        if hi is None or lo is None:
+            continue
+        daily["time"].append(d.isoformat())
+        daily["weather_code"].append(HA_WMO.get((f or {}).get("condition") or st.get("state"), 3))
+        daily["temperature_2m_max"].append(max(hi, lo))
+        daily["temperature_2m_min"].append(min(hi, lo))
+        daily["precipitation_probability_max"].append((f or {}).get("precipitation_probability") or 0)
+        daily["uv_index_max"].append((f or {}).get("uv_index"))
+    if len(daily["time"]) < 2 or a.get("temperature") is None:
+        raise RuntimeError(f"{eid} has no usable forecast")
+    current = {"temperature_2m": a["temperature"], "weather_code": HA_WMO.get(st.get("state"), 3),
+               "is_day": 1 if day else 0, "wind_speed_10m": a.get("wind_speed") or 0,
+               "wind_gusts_10m": a.get("wind_gust_speed")}
+    return {"current": current, "hourly": hourly, "daily": daily}
 
 
 # ---------------------------------------------------------------- markets
@@ -346,4 +442,7 @@ def discover(ctx, states):
             cals = [c["entity_id"] for c in ha.calendars()]
         except Exception:
             cals = []
-    return {"indoor": indoor, "printer": printer, "packages": packages, "health": health, "calendars": cals}
+    weather_eid = o.get("weather_entity") or ("weather.forecast_home" if "weather.forecast_home" in states
+                                              else next((e for e in states if e.startswith("weather.")), None))
+    return {"indoor": indoor, "printer": printer, "packages": packages, "health": health, "calendars": cals,
+            "weather": weather_eid}

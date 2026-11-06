@@ -117,6 +117,7 @@ def status(app):
         ("Packages", [v for v in (d.get("packages") or {}).values() if v]),
         ("Health", [v for v in (d.get("health") or {}).values() if v]),
         ("Calendars", list(d.get("calendars") or [])),
+        ("Backup weather", [d["weather"]] if d.get("weather") else []),
     ]
     pf = app.sources["portfolio"].data or {}
     if pf.get("accounts"):
