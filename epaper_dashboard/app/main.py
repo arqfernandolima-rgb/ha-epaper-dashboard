@@ -13,6 +13,7 @@ import hashlib
 import json
 import logging
 import os
+import secrets
 import threading
 import time
 from zoneinfo import ZoneInfo
@@ -122,6 +123,48 @@ class App:
         self.render_error, self.render_secs, self.state = None, None, "starting"
         self.last_poll = None
         self._load()
+        self._load_claude()
+
+    # -- Claude usage pushed by the Clawdmeter daemon (POST /claude on the frame port)
+    def _load_claude(self):
+        try:
+            with open(os.path.join(DATA, "push_token")) as f:
+                self.push_token = f.read().strip()
+        except OSError:
+            self.push_token = secrets.token_urlsafe(18)
+            try:
+                with open(os.path.join(DATA, "push_token"), "w") as f:
+                    f.write(self.push_token)
+            except OSError:
+                pass
+        try:
+            with open(os.path.join(DATA, "claude.json")) as f:
+                self.claude = json.load(f)
+        except (OSError, ValueError):
+            self.claude = {}
+
+    def receive_claude(self, body, ip):
+        """Store the latest usage per plan: Max/Pro ("acct": "pro") and Enterprise ("acct": "ent")."""
+        plans = body.get("plans") if isinstance(body, dict) else None
+        if plans is None and isinstance(body, dict) and "acct" in body:
+            plans = [body]
+        if not isinstance(plans, list) or not plans:
+            return False
+        now = self.now().timestamp()
+        for p in plans[:4]:
+            if not isinstance(p, dict) or not p.get("ok", True):
+                continue
+            key = {"pro": "max", "max": "max", "ent": "enterprise"}.get(str(p.get("acct", "")).lower())
+            if not key:
+                continue
+            clean = {k: p[k] for k in ("s", "sr", "w", "wr", "st", "tp", "pd", "rd", "acct") if k in p}
+            self.claude[key] = {"p": clean, "at": now, "from": str(body.get("host") or ip)[:40]}
+        try:
+            with open(os.path.join(DATA, "claude.json"), "w") as f:
+                json.dump(self.claude, f)
+        except OSError:
+            pass
+        return True
 
     # -- persistence: keep serving the same frame across restarts
     def _load(self):
@@ -274,6 +317,7 @@ class App:
         self.update_now.clear()
         data = {k: s.fresh() for k, s in self.sources.items()}
         tomorrow = self.tomorrow_mode(now)
+        data["claude"] = dict(self.claude)
         vm = view.build(now, data, ctx.discovered, self.opts, self.sticky, tomorrow)
         key = hashlib.sha1(json.dumps(vm, sort_keys=True, default=str).encode()).hexdigest()
         self.vm, self.vm_key, self.vm_tomorrow = vm, key, tomorrow

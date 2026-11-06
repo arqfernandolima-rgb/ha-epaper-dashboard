@@ -286,25 +286,30 @@ def hum_level(v):
 
 
 def build_indoor(states, disc, now, sticky):
-    ind = disc.get("indoor") or {}
-    if not any(ind.get(k) for k in ("temperature", "humidity", "voc")):
+    rooms = []
+    for room in (disc.get("rooms") or [])[:3]:
+        cells = []
+        for key, label, step, fmt, lvl in (
+                ("temperature", "Temp", 1.0, lambda v: f"{round(v)}°", None),
+                ("humidity", "Hum.", 3.0, lambda v: f"{round(v)}%", hum_level),
+                ("voc", "VOC", 25.0, lambda v: f"{round(v)}", voc_level)):
+            if not room.get(key):
+                cells.append({"k": label, "v": "", "lvl": "", "none": True})
+                continue
+            s = _state(states, room[key])
+            v = num(s["state"]) if s else None
+            if v is None:
+                cells.append({"k": label, "v": DASH, "lvl": ""})
+                continue
+            level = lvl(v) if lvl else ""
+            v = sticky.get(f"indoor:{room['name']}:{key}", v, now, level=level,
+                           changed=lambda a, b, st=step: abs(a - b) >= st)
+            cells.append({"k": label, "v": fmt(v), "lvl": lvl(v) if lvl else ""})
+        if any(not c.get("none") for c in cells):
+            rooms.append({"name": room["name"], "cells": cells})
+    if not rooms:
         return None
-    cells = []
-    for key, label, step, fmt, lvl in (
-            ("temperature", "Temp", 1.0, lambda v: f"{round(v)}°", None),
-            ("humidity", "Hum.", 3.0, lambda v: f"{round(v)}%", hum_level),
-            ("voc", "VOC", 25.0, lambda v: f"{round(v)}", voc_level)):
-        if not ind.get(key):
-            continue
-        s = _state(states, ind[key])
-        v = num(s["state"]) if s else None
-        if v is None:
-            cells.append({"k": label, "v": DASH, "lvl": ""})
-            continue
-        level = lvl(v) if lvl else ""
-        v = sticky.get(f"indoor:{key}", v, now, level=level, changed=lambda a, b, st=step: abs(a - b) >= st)
-        cells.append({"k": label, "v": fmt(v), "lvl": lvl(v) if lvl else ""})
-    return {"area": ind.get("area") or "", "cells": cells}
+    return {"area": rooms[0]["name"] if len(rooms) == 1 else "", "rooms": rooms}
 
 
 def build_packages(states, disc):
@@ -424,6 +429,42 @@ def build_printer(states, disc, now):
     return out, alert
 
 
+# ---------------------------------------------------------------- Claude (from the Clawdmeter daemon)
+def use_level(v):
+    return "poor" if v >= 90 else "fair" if v >= 75 else ""
+
+
+def build_claude(cl, now, opts):
+    plans = []
+    for key in ("max", "enterprise"):
+        rec = (cl or {}).get(key)
+        if not rec:
+            continue
+        age = now.timestamp() - rec["at"]
+        if age > 6 * 3600:                         # daemon stopped long ago: hide rather than mislead
+            continue
+        p, at = rec["p"], dt.datetime.fromtimestamp(rec["at"], now.tzinfo)
+        s = int(round(float(p.get("s") or 0)))
+        if key == "max":
+            w = int(round(float(p.get("w") or 0)))
+            sub = ""
+            if p.get("sr"):
+                sub = "resets " + t12(round_to(at + dt.timedelta(minutes=float(p["sr"])), 5))
+            bars = [{"k": "Session", "v": s, "lvl": use_level(s), "tick": None},
+                    {"k": "Week", "v": w, "lvl": use_level(w), "tick": None}]
+            name = opts.get("claude_personal_name") or "Max"
+        else:
+            tp = p.get("tp")
+            sub = f"resets {p['rd']}" if p.get("rd") else ""
+            bars = [{"k": "Budget", "v": s, "lvl": use_level(s),
+                     "tick": max(0, min(100, int(tp))) if tp not in (None, "") else None}]
+            name = "Enterprise"
+        if age > 20 * 60:
+            sub = f"as of {t12(at)}"
+        plans.append({"name": name, "sub": sub, "bars": bars})
+    return {"plans": plans} if plans else None
+
+
 # ---------------------------------------------------------------- the whole screen
 def _safe(name, fn, *args, default=None):
     """One broken widget (odd data from an API) shouldn't take the whole screen down."""
@@ -454,5 +495,6 @@ def build(now, data, disc, opts, sticky, tomorrow):
         "markets": _safe("markets", build_markets, data.get("markets"), opts, now, sticky, data.get("portfolio")),
         "health": _safe("health", build_health, states, disc, opts, now, sticky),
         "printer": printer,
+        "claude": _safe("claude", build_claude, data.get("claude"), now, opts),
     }
     return vm

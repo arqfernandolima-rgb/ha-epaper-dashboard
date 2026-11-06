@@ -47,6 +47,10 @@ code{font-size:13px;overflow-wrap:anywhere}
     {% for x in s.sources %}<tr><td>{{ x.name }}</td><td>{% if x.ok %}<span class="ok">OK</span> · {{ x.when }}{% elif x.note %}<span class="none">{{ x.note }}</span>{% elif x.error %}<span class="bad">Error</span> · last good {{ x.when }}<div class="err">{{ x.error }}</div>{% else %}<span class="none">waiting</span>{% endif %}</td></tr>{% endfor %}
     <tr><td>Stocks</td><td>{{ s.stocks or '—' }}</td></tr>
   </table></div>
+  <div class="card"><h2>Clawdmeter daemon settings</h2>
+    <p class="meta" style="margin:0 0 8px">Add these two lines to the daemon's config file to send Claude usage here:</p>
+    <code>dashboard_url = http://&lt;HA address&gt;:8090/claude<br>dashboard_token = {{ s.push_token }}</code>
+  </div>
   <div class="card"><h2>Found in Home Assistant</h2><table>
     {% for name, v in s.found %}<tr><td>{{ name }}</td><td>{% if v %}{% for e in v %}<code>{{ e }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}<span class="none">not found</span>{% endif %}</td></tr>{% endfor %}
   </table><p class="meta" style="margin:10px 0 0">Wrong pick or missing? Set it in this app's Configuration tab.</p></div>

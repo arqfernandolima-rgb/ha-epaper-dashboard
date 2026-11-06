@@ -21,8 +21,9 @@ The display reads `http://<HA address>:8090/frame.epd` and only redraws when the
 | Weather, AQI, UV | Open-Meteo, using your Home Assistant home location | none |
 | Stocks | Finnhub (official free API); the day chart is drawn from the app's own samples | free API key + symbols in Configuration (use SPY for the S&P 500) |
 | Portfolio | SnapTrade Personal (free): balances and holdings for E*TRADE (OAuth) and Vanguard, refreshed every 2 hours; stocks and ETFs priced live with Finnhub | SnapTrade client ID + consumer key in Configuration |
+| Claude | Your Clawdmeter daemon pushes Max and Enterprise usage to `http://<HA>:8090/claude` | two lines in the daemon's config (shown on the sidebar page) |
 | Calendar | Home Assistant calendar entities | any calendar integration |
-| Indoor air | Airthings integration | found automatically |
+| Indoor air | any temperature / humidity / VOC sensors, per area (up to 3 rooms) | list areas in "Indoor rooms" (default: your Airthings devices) |
 | 3D printer | Bambu Lab integration (HACS) | found automatically |
 | Packages | Mail and Packages integration (HACS) | found automatically |
 | Health | Companion app Health Connect sensors | enable Daily steps, Sleep duration, Resting heart rate in the app |

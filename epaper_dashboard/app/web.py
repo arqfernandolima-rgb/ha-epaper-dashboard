@@ -4,6 +4,7 @@
 :8099  the status page shown in HA's sidebar (ingress). Only accepts the Supervisor.
 """
 import datetime as dt
+import hmac
 import json
 import logging
 import os
@@ -82,6 +83,22 @@ def frame_handler(app):
                 return self.send(200, b"E-paper dashboard. The display reads /frame.epd\n")
             self.send(404, b"not found\n")
 
+        def do_POST(self):
+            """The Clawdmeter daemon drops its latest Claude usage here (needs the push token)."""
+            if self.route != "/claude":
+                return self.send(404, b"not found\n")
+            n = int(self.headers.get("Content-Length") or 0)
+            if n <= 0 or n > 65536:
+                return self.send(400, b"bad length\n")
+            body = self.rfile.read(n)
+            if not hmac.compare_digest(self.headers.get("X-Dashboard-Token", ""), app.push_token):
+                return self.send(403, b"bad token\n")
+            try:
+                ok = app.receive_claude(json.loads(body), self.client_address[0])
+            except ValueError:
+                ok = False
+            self.send(204 if ok else 400, b"" if ok else b"expected {\"plans\": [...]}\n")
+
         def do_HEAD(self):
             if self.route == "/frame.epd":
                 return self._frame(head=True)
@@ -110,9 +127,20 @@ def status(app):
         srcs.append({"name": s.name, "ok": s.error is None and s.data is not None and not partial and not off,
                      "when": _ago(s.ok_at), "error": s.error or ("; ".join(partial) if partial else None),
                      "note": "not set up (add your SnapTrade keys in Configuration)" if off else None})
+    cl = app.claude or {}
+    if cl:
+        latest = max(r["at"] for r in cl.values())
+        names = ", ".join(("Max" if k == "max" else "Enterprise") + f" {_ago(r['at'])}" for k, r in cl.items())
+        srcs.append({"name": "Claude (Clawdmeter daemon)", "ok": time.time() - latest < 1200, "when": names,
+                     "error": None if time.time() - latest < 1200 else "no update in 20+ minutes",
+                     "note": None})
+    else:
+        srcs.append({"name": "Claude (Clawdmeter daemon)", "ok": False, "when": "", "error": None,
+                     "note": "waiting for the daemon (settings below)"})
     d = app.ctx.discovered or {}
     found = [
-        ("Indoor air", [v for k, v in (d.get("indoor") or {}).items() if v and k != "area"]),
+        ("Indoor air", [f"{r['name']}: " + ", ".join(v for k, v in r.items() if k != "name")
+                        for r in d.get("rooms") or []]),
         ("3D printer", [d["printer"] + "_*"] if d.get("printer") else []),
         ("Packages", [v for v in (d.get("packages") or {}).values() if v]),
         ("Health", [v for v in (d.get("health") or {}).values() if v]),
@@ -137,6 +165,7 @@ def status(app):
         "sources": srcs, "found": found,
         "stocks": ", ".join(s["symbol"] for s in app.opts.get("stocks", [])),
         "version": os.environ.get("DASH_VERSION", ""),
+        "push_token": app.push_token,
     }
 
 

@@ -1,5 +1,5 @@
 name: E-paper Dashboard
-version: "0.4.2"
+version: "0.5.0"
 slug: epaper_dashboard
 description: Draws the office e-paper dashboard and serves it to the ESP32 display
 url: https://github.com/arqfernandolima-rgb/ha-epaper-dashboard
@@ -25,6 +25,7 @@ options:
     - symbol: ZTS
       name: Zoetis
   calendars: []
+  indoor_rooms: []
   quiet_hours_start: 0
   quiet_hours_end: 6
   steps_goal: 8000
@@ -39,6 +40,8 @@ schema:
     - symbol: str
       name: str?
   calendars:
+    - str
+  indoor_rooms:
     - str
   quiet_hours_start: int(0,23)
   quiet_hours_end: int(0,23)
@@ -56,6 +59,7 @@ schema:
   snaptrade_client_id: str?
   snaptrade_consumer_key: password?
   weather_entity: str?
+  claude_personal_name: str?
   indoor_temperature: str?
   indoor_humidity: str?
   indoor_voc: str?

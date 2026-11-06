@@ -11,7 +11,7 @@ import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
 
-VERSION = "0.4.2"
+VERSION = "0.5.0"
 UA = f"epaper-dashboard/{VERSION} (+https://github.com/arqfernandolima-rgb/ha-epaper-dashboard)"
 
 
@@ -389,6 +389,63 @@ def calendar(ctx, prev=None):
 
 
 # ---------------------------------------------------------------- HA entities
+AIR_CLASSES = {"temperature": "temperature", "humidity": "humidity",
+               "volatile_organic_compounds_parts": "voc", "volatile_organic_compounds": "voc"}
+
+# One template call: sensors in the listed areas (directly or via their devices) + every Airthings sensor,
+# each with its device, so readings can be grouped per device and per room.
+ROOMS_TPL = """{%- set ns = namespace(out=[]) -%}
+{%- for a in AREAS -%}
+  {%- set en = namespace(ents=(area_entities(a) | list)) -%}
+  {%- for d in area_devices(a) -%}{%- set en.ents = en.ents + (device_entities(d) | list) -%}{%- endfor -%}
+  {%- for e in en.ents | unique if e.startswith('sensor.') -%}
+    {%- set ns.out = ns.out + [[a, e, state_attr(e, 'device_class') or '', device_id(e) or e,
+        device_attr(device_id(e), 'name_by_user') or device_attr(device_id(e), 'name') or '', a]] -%}
+  {%- endfor -%}
+{%- endfor -%}
+{%- for e in integration_entities('airthings') if e.startswith('sensor.') -%}
+  {%- set ns.out = ns.out + [['', e, state_attr(e, 'device_class') or '', device_id(e) or e,
+      device_attr(device_id(e), 'name_by_user') or device_attr(device_id(e), 'name') or '', area_name(e) or '']] -%}
+{%- endfor -%}
+{{ ns.out | to_json }}"""
+
+
+def _indoor_rooms(ctx, states):
+    """Rooms for the Indoor air widget: the areas listed in "Indoor rooms" (best air sensor device in each),
+    or every Airthings device when none are listed. Manual entity options make a room of their own."""
+    o, ha = ctx.opts, ctx.ha
+    wanted = [a.strip() for a in (o.get("indoor_rooms") or []) if a and a.strip()]
+    try:
+        rows = json.loads(ha.template(ROOMS_TPL.replace("AREAS", json.dumps(wanted))))
+    except Exception:
+        rows = []
+    devices = {}                                   # device -> {room, name, readings, airthings}
+    for asked, eid, dc, dev, dev_name, area in rows:
+        kind = AIR_CLASSES.get(dc) or AIR_CLASSES.get(states.get(eid, {}).get("attributes", {}).get("device_class", ""))
+        if not kind:
+            continue
+        d = devices.setdefault((asked, dev), {"room": asked or area or dev_name or "Indoor", "readings": {},
+                                              "airthings": not asked})
+        d["readings"].setdefault(kind, eid)
+    rooms = {}
+    for d in devices.values():
+        key = d["room"].lower()
+        best = rooms.get(key)
+        score = (len(d["readings"]), d["airthings"])
+        if best is None or score > (len(best["readings"]), best["airthings"]):
+            rooms[key] = d
+    manual = {k: o.get(f"indoor_{k}") for k in ("temperature", "humidity", "voc") if o.get(f"indoor_{k}")}
+    if manual:
+        rooms["__manual__"] = {"room": "Indoor", "readings": manual}
+    if wanted:
+        order = [w.lower() for w in wanted]
+        picked = [rooms[k] for k in order if k in rooms]
+        picked += [r for k, r in rooms.items() if k == "__manual__"]
+    else:
+        picked = sorted(rooms.values(), key=lambda r: ("office" not in r["room"].lower(), r["room"]))
+    return [{"name": r["room"], **r["readings"]} for r in picked[:3]]
+
+
 def ha_states(ctx, prev=None):
     return ctx.ha.states()
 
@@ -404,19 +461,7 @@ def discover(ctx, states):
         return (first(cands, lambda e: states.get(e, {}).get("attributes", {}).get("device_class") == cls)
                 or first(cands, lambda e: hint in e))
 
-    air = [e for e in ha.integration_entities("airthings") if e.startswith("sensor.")]
-    indoor = {
-        "temperature": o.get("indoor_temperature") or by_class(air, "temperature", "temperature"),
-        "humidity": o.get("indoor_humidity") or by_class(air, "humidity", "humidity"),
-        "voc": o.get("indoor_voc") or by_class(air, "volatile_organic_compounds_parts", "voc"),
-    }
-    area = ""
-    if indoor["temperature"]:
-        try:
-            area = ha.template("{{ area_name('%s') or '' }}" % indoor["temperature"]).strip()
-        except Exception:
-            pass
-    indoor["area"] = area
+    rooms = _indoor_rooms(ctx, states)
 
     # Bambu Lab: the printer's sensors share a prefix (sensor.h2c_...); find it from any of the usual ones
     bambu = [e for e in ha.integration_entities("bambu_lab") if e.startswith("sensor.")]
@@ -457,5 +502,5 @@ def discover(ctx, states):
             cals = []
     weather_eid = o.get("weather_entity") or ("weather.forecast_home" if "weather.forecast_home" in states
                                               else next((e for e in states if e.startswith("weather.")), None))
-    return {"indoor": indoor, "printer": printer, "packages": packages, "health": health, "calendars": cals,
+    return {"rooms": rooms, "printer": printer, "packages": packages, "health": health, "calendars": cals,
             "weather": weather_eid, "garages": garages}
