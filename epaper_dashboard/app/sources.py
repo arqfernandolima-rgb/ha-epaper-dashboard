@@ -1,7 +1,11 @@
 """Data fetchers. Each returns plain data; view.py turns it into what's on screen."""
+import base64
 import datetime as dt
+import hashlib
+import hmac
 import json
 import os
+import time
 import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
@@ -105,6 +109,23 @@ def _day_chart(pts, o, c, now_ts, open_price):
     return vals                                   # None = no sample yet (the line skips it)
 
 
+EQUITY = {"stock", "etf", "adr", "cef", "preferred_stock"}     # kinds Finnhub can price live
+
+
+def _record(samples, key, day, o, c, now, value):
+    rec = samples.get(key)
+    if not rec or rec.get("day") != day:
+        rec = samples[key] = {"day": day, "open": o, "close": c, "pts": []}
+    rec["pts"].append([int(now.timestamp()), value])
+
+
+def _chart(samples, key, o, c, now, anchor):
+    rec = samples.get(key)
+    if not rec:
+        return []
+    return _day_chart(rec.get("pts", []), rec.get("open", o), rec.get("close", c), now.timestamp(), anchor)
+
+
 def markets(ctx, prev=None):
     key = (ctx.opts.get("finnhub_api_key") or "").strip()
     if not key:
@@ -120,33 +141,62 @@ def markets(ctx, prev=None):
     samples = old.get("samples") or _load_samples()
     day = now.astimezone(ET).date().isoformat()
 
-    quotes, errors = {}, []
-    for s in ctx.opts.get("stocks", []):
-        sym = s["symbol"].upper()
+    hold = getattr(ctx, "holdings", None) or {}
+    held = sorted({p["symbol"].upper() for p in hold.get("positions", [])
+                   if p.get("kind") in EQUITY and p.get("symbol") and not p.get("cash_equivalent")})
+    watch = [s["symbol"].upper() for s in ctx.opts.get("stocks", [])]
+    raw, errors = {}, []
+    for sym in dict.fromkeys(watch + held):              # each symbol once, watch list first
         try:
             q = _finnhub(f"/quote?symbol={urllib.parse.quote(sym)}", key)
             if not q.get("c") or not q.get("pc"):
                 raise ValueError("no quote (indexes like ^GSPC aren't on the free plan; try SPY)")
-            price, prev_close = float(q["c"]), float(q["pc"])
-            if in_session:
-                rec = samples.get(sym)
-                if not rec or rec.get("day") != day:
-                    rec = samples[sym] = {"day": day, "open": o, "close": c, "pts": []}
-                rec["pts"].append([int(now.timestamp()), price])
-            rec = samples.get(sym) or {}
-            series = _day_chart(rec.get("pts", []), rec.get("open", o), rec.get("close", c),
-                                now.timestamp(), q.get("o")) if rec else []
-            quotes[sym] = {"price": price, "prev": prev_close, "series": series,
-                           "open_ts": o, "close_ts": c, "source": "Finnhub"}
+            raw[sym] = q
         except Exception as e:
-            errors.append(f"{sym}: {e}"[:160])
+            if sym in watch:
+                errors.append(f"{sym}: {e}"[:160])
+
+    quotes = {}
+    for sym in watch:
+        q = raw.get(sym)
+        if not q:
             if sym in old.get("quotes", {}):
-                quotes[sym] = old["quotes"][sym]
+                quotes[sym] = old["quotes"][sym]       # keep the last good quote
+            continue
+        price, prev_close = float(q["c"]), float(q["pc"])
+        if in_session:
+            _record(samples, sym, day, o, c, now, price)
+        quotes[sym] = {"price": price, "prev": prev_close, "series": _chart(samples, sym, o, c, now, q.get("o")),
+                       "open_ts": o, "close_ts": c, "source": "Finnhub"}
+
+    portfolio = None
+    if hold.get("net_value") is not None:
+        # total = the broker's last net value + how far live-priced holdings moved since that snapshot;
+        # day change = shares x (price now - yesterday's close). Funds reprice overnight (no intraday move).
+        change = moved = 0.0
+        priced = 0
+        for p in hold.get("positions", []):
+            q = raw.get((p.get("symbol") or "").upper())
+            if not q or p.get("kind") not in EQUITY or p.get("cash_equivalent"):
+                continue
+            units, cur, pc = float(p["units"]), float(q["c"]), float(q["pc"])
+            change += units * (cur - pc)
+            moved += units * (cur - float(p.get("price") or pc))
+            priced += 1
+        total = float(hold["net_value"]) + moved
+        if in_session:
+            _record(samples, "__portfolio__", day, o, c, now, round(total, 2))
+        portfolio = {"total": total, "change": change, "prev": total - change, "priced": priced,
+                     "series": _chart(samples, "__portfolio__", o, c, now, total - change),
+                     "open_ts": o, "close_ts": c}
+    elif old.get("portfolio") and hold:
+        portfolio = old["portfolio"]
+
     if in_session:
         _save_samples(samples)
-    if errors and len(errors) == len(ctx.opts.get("stocks", [])):
+    if errors and len(errors) == len(watch) and not portfolio:
         raise RuntimeError("; ".join(errors))      # all failed: keep the last result, show the error
-    return {"quotes": quotes, "errors": errors, "status": status, "samples": samples}
+    return {"quotes": quotes, "errors": errors, "status": status, "samples": samples, "portfolio": portfolio}
 
 
 def market_open(mk, now_ts):
@@ -155,6 +205,51 @@ def market_open(mk, now_ts):
         if q.get("open_ts") and q.get("close_ts"):
             return q["open_ts"] <= now_ts < q["close_ts"]
     return False
+
+
+# ---------------------------------------------------------------- portfolio (SnapTrade)
+# SnapTrade Personal: free API to your own brokerage accounts. E*TRADE connects with OAuth,
+# Vanguard with its login (it has no API). Holdings are synced about once a day on their side,
+# so every 2 hours is plenty; live pricing happens in markets().
+SNAPTRADE = "https://api.snaptrade.com"
+
+
+def snap_signature(path, query, consumer_key, body=None):
+    """Same as the official SDK: HMAC-SHA256 over {"content","path","query"} as compact sorted JSON."""
+    content = json.dumps({"content": body, "path": path, "query": query}, separators=(",", ":"), sort_keys=True)
+    return base64.b64encode(hmac.new(consumer_key.encode(), content.encode(), hashlib.sha256).digest()).decode()
+
+
+def snap_get(path, client_id, consumer_key, params=()):
+    query = urllib.parse.urlencode(list(params) + [("clientId", client_id), ("timestamp", str(int(time.time())))])
+    return http_json(f"{SNAPTRADE}{path}?{query}", headers={"Signature": snap_signature(path, query, consumer_key)})
+
+
+def portfolio(ctx, prev=None):
+    cid = (ctx.opts.get("snaptrade_client_id") or "").strip()
+    key = (ctx.opts.get("snaptrade_consumer_key") or "").strip()
+    if not cid or not key:
+        return {"configured": False}
+    accounts, positions, net = [], [], 0.0
+    for a in snap_get("/accounts/all", cid, key).get("results", []):
+        if a.get("kind") != "investment" or a.get("is_paper") or a.get("status") not in (None, "open"):
+            continue
+        aid = a["id"]
+        bal = snap_get(f"/accounts/{urllib.parse.quote(aid)}/balances/v2", cid, key)
+        value = float((bal.get("net_value") or {}).get("amount") or (a.get("net_value") or {}).get("amount") or 0)
+        net += value
+        for p in snap_get(f"/accounts/{urllib.parse.quote(aid)}/positions/all", cid, key).get("results", []):
+            ins = p.get("instrument") or {}
+            if ins.get("kind") in (None, "cash"):
+                continue                                  # cash is already in the net value
+            positions.append({"symbol": ins.get("symbol") or "", "kind": ins.get("kind"),
+                              "units": float(p.get("units") or 0), "price": float(p.get("price") or 0),
+                              "cash_equivalent": bool(p.get("cash_equivalent"))})
+        accounts.append({"name": a.get("display_name") or a.get("raw_type") or "Account",
+                         "mask": a.get("masked_account_number") or "", "value": value})
+    if not accounts:
+        raise RuntimeError("SnapTrade has no open investment accounts yet: connect them in its dashboard")
+    return {"configured": True, "accounts": accounts, "positions": positions, "net_value": net}
 
 
 # ---------------------------------------------------------------- calendar

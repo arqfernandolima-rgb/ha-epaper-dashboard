@@ -106,8 +106,10 @@ def status(app):
     srcs = []
     for s in app.sources.values():
         partial = s.data.get("errors") if isinstance(s.data, dict) and not s.error else None
-        srcs.append({"name": s.name, "ok": s.error is None and s.data is not None and not partial,
-                     "when": _ago(s.ok_at), "error": s.error or ("; ".join(partial) if partial else None)})
+        off = isinstance(s.data, dict) and s.data.get("configured") is False and not s.error
+        srcs.append({"name": s.name, "ok": s.error is None and s.data is not None and not partial and not off,
+                     "when": _ago(s.ok_at), "error": s.error or ("; ".join(partial) if partial else None),
+                     "note": "not set up (add your SnapTrade keys in Configuration)" if off else None})
     d = app.ctx.discovered or {}
     found = [
         ("Indoor air", [v for k, v in (d.get("indoor") or {}).items() if v and k != "area"]),
@@ -116,6 +118,9 @@ def status(app):
         ("Health", [v for v in (d.get("health") or {}).values() if v]),
         ("Calendars", list(d.get("calendars") or [])),
     ]
+    pf = app.sources["portfolio"].data or {}
+    if pf.get("accounts"):
+        found.append(("Brokerage accounts", [f"{a['name']} {a['mask']}".strip() for a in pf["accounts"]]))
     poll = app.last_poll
     return {
         "state": app.state, "drawn": t(app.drawn_at), "render_secs": app.render_secs,

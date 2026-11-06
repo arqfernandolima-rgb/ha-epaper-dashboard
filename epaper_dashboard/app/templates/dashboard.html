@@ -75,6 +75,7 @@ body{width:1360px;height:480px;overflow:hidden;background:var(--w);color:var(--k
 .tk{font-size:18px;font-weight:800;letter-spacing:.06em}
 .nm2{font-size:16px;font-weight:600;margin-left:6px}
 .px{font-size:40px;font-weight:700;letter-spacing:-.03em;line-height:1.05}
+.px.pf{font-size:34px;line-height:1.2}
 .cmp .px{font-size:26px;line-height:1.1}
 .cmp .mrow{padding:6px 0}
 
@@ -149,7 +150,7 @@ body{width:1360px;height:480px;overflow:hidden;background:var(--w);color:var(--k
   <div class="mh"><span class="lbl">Markets</span><span class="hint">{{ m.status }}</span></div>
   {%- for r in m.rows %}
   <div class="mrow{% if loop.first %} first{% endif %}{% if loop.last %} last{% endif %}">
-    <div style="flex:1;min-width:0"><div class="ell"><span class="tk">{{ r.label }}</span><span class="nm2">{{ r.name }}</span></div><div class="px">{{ r.price }}</div>
+    <div style="flex:1;min-width:0"><div class="ell"><span class="tk">{{ r.label }}</span><span class="nm2">{{ r.name }}</span></div><div class="px{% if r.pf %} pf{% endif %}">{{ r.price }}</div>
       <div class="sub">{% if r.pct %}<span class="chip {{ 'up' if r.up else 'dn' }}">{{ tri(r.up) }}{{ r.pct }}</span>{{ r.chg }}{% endif %}</div></div>
     <div>{{ spark(r.sym, r.series, r.base, 100 if n >= 4 else 112, sh, r.slots) }}</div>
   </div>

@@ -66,6 +66,14 @@ def money(v):
     return f"{v:,.2f}"
 
 
+def money0(v):
+    return f"${v / 1e6:,.3f}M" if abs(v) >= 1e6 else f"${v:,.0f}"
+
+
+def signed0(v):
+    return f"+${v:,.0f}" if v >= 0 else f"{MINUS}${abs(v):,.0f}"
+
+
 def signed(v):
     return f"+{v:,.2f}" if v >= 0 else f"{MINUS}{abs(v):,.2f}"
 
@@ -211,7 +219,7 @@ def build_today(cal, now, tomorrow, max_later):
 
 
 # ---------------------------------------------------------------- markets
-def build_markets(mk, opts, now, sticky):
+def build_markets(mk, opts, now, sticky, hold=None):
     quotes = (mk or {}).get("quotes", {})
     now_ts = now.timestamp()
     status = "Closed"
@@ -242,6 +250,19 @@ def build_markets(mk, opts, now, sticky):
                    "up": pct >= 0, "series": [None if x is None else round(x, 2) for x in q["series"]], "base": round(q["prev"], 2),
                    "slots": slots, "p": round(pct, 2)}
             row.update({k: v for k, v in val.items() if k != "p"})
+        rows.append(row)
+    if hold and hold.get("configured") and hold.get("net_value") is not None:
+        pf = (mk or {}).get("portfolio")
+        row = {"sym": "PORTFOLIO", "label": "PORTFOLIO", "name": "", "pf": True, "price": money0(hold["net_value"]),
+               "pct": "", "chg": "", "up": True, "series": [], "base": None, "slots": 0}
+        if pf:
+            pct = pf["change"] / pf["prev"] * 100 if pf["prev"] else 0.0
+            slots = len(pf["series"])
+            if pf["open_ts"] <= now_ts < pf["close_ts"]:
+                slots = max(slots, int((pf["close_ts"] - pf["open_ts"]) / 300))
+            row.update({"price": money0(pf["total"]), "pct": f"{abs(pct):.2f}%", "chg": signed0(pf["change"]),
+                        "up": pf["change"] >= 0, "base": round(pf["prev"], 0), "slots": slots,
+                        "series": [None if x is None else round(x, 0) for x in pf["series"]]})
         rows.append(row)
     if not rows:
         return None
@@ -414,7 +435,7 @@ def build(now, data, disc, opts, sticky, tomorrow):
         "weather": _safe("weather", build_weather, data["weather"], now, now.tzinfo, tomorrow)
                    if data.get("weather") else None,
         "indoor": _safe("indoor", build_indoor, states, disc, now, sticky),
-        "markets": _safe("markets", build_markets, data.get("markets"), opts, now, sticky),
+        "markets": _safe("markets", build_markets, data.get("markets"), opts, now, sticky, data.get("portfolio")),
         "health": _safe("health", build_health, states, disc, opts, now, sticky),
         "printer": printer,
     }

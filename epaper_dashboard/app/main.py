@@ -103,6 +103,7 @@ class App:
             "states": Source("Home Assistant", sources.ha_states, 60),
             "calendar": Source("Calendar", sources.calendar, 300, stale_after=6 * 3600),
             "weather": Source("Weather", sources.weather, 900, stale_after=3 * 3600),
+            "portfolio": Source("Portfolio", sources.portfolio, 7200, retry=600),
             "markets": Source("Markets", sources.markets, self._markets_every, retry=300),
         }
         self.discovered_at = 0.0
@@ -261,8 +262,10 @@ class App:
                 self.discovered_at = time.time()
             except Exception as e:
                 log.warning("discovery: %s", e)
-        for key in ("calendar", "weather", "markets"):
+        for key in ("calendar", "weather", "portfolio", "markets"):
             s = self.sources[key]
+            if key == "markets":
+                ctx.holdings = self.sources["portfolio"].data      # priced live along with the stocks
             if s.due(ctx):
                 s.run(ctx)
 

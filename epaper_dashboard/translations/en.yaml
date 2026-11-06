@@ -29,6 +29,12 @@ configuration:
   finnhub_api_key:
     name: Finnhub API key
     description: Needed for stocks. Free at finnhub.io (sign up, copy the key from the dashboard). The free plan covers US stocks and ETFs but not indexes, so use SPY for the S&P 500.
+  snaptrade_client_id:
+    name: SnapTrade client ID (portfolio)
+    description: From your free SnapTrade Personal account (snaptrade.com/personal), after connecting E*TRADE and Vanguard there. Adds a Portfolio row with your total and today's change.
+  snaptrade_consumer_key:
+    name: SnapTrade consumer key (portfolio)
+    description: The secret key that goes with the client ID. Read-only access to your accounts.
   indoor_temperature:
     name: Indoor temperature entity (optional)
     description: Only needed if the Airthings sensor isn't found automatically.
