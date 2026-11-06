@@ -68,9 +68,13 @@ body{width:1360px;height:480px;overflow:hidden;background:var(--w);color:var(--k
 .cell.fair{background:var(--y);border-color:#000}
 .cell.poor{background:var(--r);color:#fff}
 .rooms{display:grid;gap:2px 6px;margin-top:6px;align-items:center}
-.rooms .rk{font-size:16px;font-weight:600}
-.rooms .rn{font-size:16px;font-weight:600;padding-left:6px}
-.rooms b.cell{display:block;justify-self:start;font-size:22px;font-weight:700;letter-spacing:-.01em;padding:1px 6px 2px}
+.rooms .rk{font-size:16px;font-weight:600;padding-left:6px}
+.rooms .rn{font-size:18px;font-weight:600}
+.rooms b.cell{display:block;font-size:22px;font-weight:700;letter-spacing:-.01em;padding:1px 6px 2px}
+.rooms.c4{gap:2px 3px}
+.rooms.c4 .rk{padding-left:3px}
+.rooms.c4 .rn{max-width:80px;padding-right:4px}
+.rooms.c4 b.cell{font-size:21px;padding:1px 3px 2px}
 
 .mh{display:flex;justify-content:space-between;align-items:baseline}
 .mrow{display:flex;align-items:center;gap:10px;border-top:2px solid #000;padding:10px 0;flex:1;min-height:0}
@@ -150,11 +154,12 @@ body{width:1360px;height:480px;overflow:hidden;background:var(--w);color:var(--k
       {%- for c in shown %}<div class="cell {{ c.lvl }}"><span>{{ c.k }}</span><b>{{ c.v }}</b></div>{% endfor %}
     </div>
     {%- else %}
-    {#- rooms across, readings down: four readings x two or three rooms fit the column width #}
-    <div class="rooms" style="grid-template-columns:54px repeat({{ vm.indoor.rooms | length }},minmax(0,1fr))">
-      <span></span>{% for r in vm.indoor.rooms %}<span class="rn ell">{{ r.name }}</span>{% endfor %}
-      {%- for k in vm.indoor.cols %}{% set i = loop.index0 %}
-      <span class="rk">{{ k }}</span>{% for r in vm.indoor.rooms %}{% set c = r.cells[i] %}<b class="cell {{ c.lvl }}">{{ '—' if c.none else c.v }}</b>{% endfor %}
+    {#- one row per room; with a 4th reading (CO2) the columns size to their values and tighten up #}
+    {%- set n = vm.indoor.cols | length %}
+    <div class="rooms{{ ' c4' if n > 3 }}" style="grid-template-columns:{{ 'max-content repeat(%d,auto)' % n if n > 3 else '86px repeat(%d,1fr)' % n }}">
+      <span></span>{% for k in vm.indoor.cols %}<span class="rk">{{ k }}</span>{% endfor %}
+      {%- for r in vm.indoor.rooms %}
+      <span class="rn ell">{{ r.name }}</span>{% for c in r.cells %}<b class="cell {{ c.lvl }}">{{ c.v }}</b>{% endfor %}
       {%- endfor %}
     </div>
     {%- endif %}
