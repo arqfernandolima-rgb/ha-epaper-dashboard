@@ -12,7 +12,7 @@ import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
 
-VERSION = "0.6.3"
+VERSION = "0.6.4"
 UA = f"epaper-dashboard/{VERSION} (+https://github.com/arqfernandolima-rgb/ha-epaper-dashboard)"
 
 
@@ -537,8 +537,48 @@ def _printers(ctx, states):
         name = name or p.split(".", 1)[-1].replace("_", " ").upper()
         # Bambu names default to "<model>_<serial>" (H2C_31B8AP5B2300863): keep the model
         name = re.sub(r"[ _-]+[0-9A-Z]{12,}$", "", name) or name
-        out.append({"id": p, "name": name})
+        out.append({"id": p, "name": name, "temps": _printer_temp_sensors(ctx, p, states)})
     return out
+
+
+PRINTER_TEMPS_TPL = """{%%- set ns = namespace(out=[]) -%%}
+{%%- for e in device_entities(device_id(%s)) if e.startswith('sensor.') -%%}
+  {%%- if state_attr(e, 'device_class') == 'temperature' -%%}
+    {%%- set ns.out = ns.out + [[e, state_attr(e, 'friendly_name') or '']] -%%}
+  {%%- endif -%%}
+{%%- endfor -%%}
+{{ ns.out | to_json }}"""
+
+
+def temp_kind(eid, name=""):
+    """Nozzle / Bed / Chamber from a temperature sensor's id or name; None for targets and others."""
+    t = f"{eid} {name}".lower()
+    if "target" in t:
+        return None
+    if any(w in t for w in ("nozzle", "hotend", "extruder")):
+        return "Nozzle"
+    if "bed" in t:
+        return "Bed"
+    if "chamber" in t:
+        return "Chamber"
+    return None
+
+
+def _printer_temp_sensors(ctx, p, states):
+    """{kind: [entity ids]} for one printer: every temperature sensor on the printer's own device
+    (names vary by model and HA version, so the device is asked rather than names guessed).
+    AMS units are separate devices, so their sensors don't get in."""
+    anchor = next((p + sf for sf in PRINTER_SUFFIXES if p + sf in states), None)
+    found = {}
+    if anchor:
+        try:
+            for eid, name in json.loads(ctx.ha.template(PRINTER_TEMPS_TPL % json.dumps(anchor))):
+                kind = temp_kind(eid, name)
+                if kind:
+                    found.setdefault(kind, []).append(eid)
+        except Exception:
+            found = {}
+    return found
 
 
 # ---------------------------------------------------------------- packages from phone notifications

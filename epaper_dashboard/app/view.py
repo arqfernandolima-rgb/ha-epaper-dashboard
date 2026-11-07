@@ -7,6 +7,8 @@ import datetime as dt
 import logging
 import math
 
+import sources
+
 log = logging.getLogger("dash")
 
 MINUS = "−"
@@ -409,7 +411,7 @@ def build_printers(states, disc, now, opts):
     printers = disc.get("printers") or []
     cards, alerts = [], []
     for pr in printers:
-        card, alert = build_printer(states, pr["id"], now, idle_hours(opts))
+        card, alert = build_printer(states, pr["id"], now, idle_hours(opts), pr.get("temps"))
         label = pr["name"] if len(printers) > 1 else "3D printer"
         if alert:
             alerts.append(f"{pr['name']} {alert[0].lower()}{alert[1:]}" if len(printers) > 1 else alert)
@@ -420,19 +422,22 @@ def build_printers(states, disc, now, opts):
     return cards, alerts
 
 
-def printer_temps(states, p):
+def printer_temps(states, p, known=None):
     """Nozzle / bed / chamber temperatures of one printer, in °C (the 3D-printing convention,
-    whatever unit HA shows). Bambu sensors share the printer's prefix; targets are skipped and
-    with several nozzles (H2 series) the hottest one is the one printing. Nozzle and bed are
-    held to 5° steps so small wiggles don't count as changes."""
-    pre = "sensor." + p.split(".", 1)[-1] + "_"
+    whatever unit HA shows). `known` = {kind: [entity ids]} found on the printer's device;
+    without it, sensors sharing the printer's prefix are used. Targets are skipped and with
+    several nozzles (H2 series) the hottest one is the one printing. Nozzle and bed are held
+    to 5° steps so small wiggles don't count as changes."""
+    if known:
+        cands = [(eid, kind) for kind, eids in known.items() for eid in eids]
+    else:
+        pre = "sensor." + p.split(".", 1)[-1] + "_"
+        cands = [(eid, sources.temp_kind(eid)) for eid in states
+                 if eid.startswith(pre) and eid.endswith("temperature")]
     hot = {}
-    for eid, st in states.items():
-        if not eid.startswith(pre) or not eid.endswith("temperature") or "target" in eid:
-            continue
-        name = eid[len(pre):]
-        kind = "Nozzle" if "nozzle" in name else "Bed" if "bed" in name else "Chamber" if "chamber" in name else None
-        v = num(st.get("state")) if kind else None
+    for eid, kind in cands:
+        st = states.get(eid)
+        v = num(st.get("state")) if kind and st else None
         if v is None:
             continue
         if str((st.get("attributes") or {}).get("unit_of_measurement", "")).upper().endswith("F"):
@@ -446,7 +451,7 @@ def printer_temps(states, p):
     return out
 
 
-def build_printer(states, p, now, idle_h=3):
+def build_printer(states, p, now, idle_h=3, temps=None):
     st = _state(states, p + "_print_status")
     raw = (st or {}).get("state", "offline").lower()
     phase = {"running": "printing", "prepare": "preparing", "slicing": "preparing", "init": "preparing",
@@ -460,8 +465,11 @@ def build_printer(states, p, now, idle_h=3):
     job = ""
     for suffix in ("_task_name", "_subtask_name", "_gcode_filename"):
         s = _state(states, p + suffix)
-        if s:
-            job = s["state"].rsplit("/", 1)[-1]
+        if s and str(s.get("state", "")).strip() not in ("", "unknown", "unavailable"):
+            job = s["state"].strip()
+            # a file path only for the gcode file name; job titles can have slashes ("X1/P1/S, P2S, A1")
+            if suffix == "_gcode_filename" or job.startswith("/"):
+                job = job.rsplit("/", 1)[-1]
             for ext in (".gcode.3mf", ".3mf", ".gcode"):
                 if job.lower().endswith(ext):
                     job = job[: -len(ext)]
@@ -469,7 +477,7 @@ def build_printer(states, p, now, idle_h=3):
     out = {"phase": phase, "job": job, "pct": None, "pct_text": "", "line": "", "end": "", "temps": []}
     alert = f"Print failed{': ' + job if job else ''}" if phase == "failed" else None
     if phase in ("printing", "paused", "preparing"):
-        out["temps"] = printer_temps(states, p)
+        out["temps"] = printer_temps(states, p, temps)
         prog = num((_state(states, p + "_print_progress") or {}).get("state")) or 0
         step = int(prog // 10 * 10)
         out["pct"], out["pct_text"] = step, f"{step}%"
@@ -492,9 +500,8 @@ def build_printer(states, p, now, idle_h=3):
         elif phase == "paused":
             out["line"] = "Paused"
         elif end:
-            end = round_to(end, 15)
             day = "" if end.date() == now.date() else f"{end.strftime('%a')} "
-            out["line"] = f"Done about {day}{t12(end)}"
+            out["line"] = f"Done at {day}{t12(end)}"
             out["end"] = f"{day}{t12(end)}"                 # for the one-line version
     elif phase == "finished":
         out["line"] = "Finished"

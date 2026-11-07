@@ -157,7 +157,8 @@ def status(app):
     pk = d.get("packages") or {}
     found = [
         ("Indoor air", [room(r) for r in d.get("rooms") or []]),
-        ("3D printers", [f"{p['name']}: {p['id']}_*" for p in d.get("printers") or []]),
+        ("3D printers", [f"{p['name']}: {p['id']}_* · " + (("temperatures: " + ", ".join(k.lower() for k in p["temps"]))
+                         if p.get("temps") else "no temperature sensors found") for p in d.get("printers") or []]),
         ("Packages", [f"Nest alerts via {e}" for e in pk.get("notifications") or []]
                      + [v for k, v in pk.items() if k != "notifications" and v]),
         ("Health", [v for v in (d.get("health") or {}).values() if v]),
