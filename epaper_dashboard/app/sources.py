@@ -12,7 +12,7 @@ import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
 
-VERSION = "0.6.5"
+VERSION = "0.7.0"
 UA = f"epaper-dashboard/{VERSION} (+https://github.com/arqfernandolima-rgb/ha-epaper-dashboard)"
 
 
@@ -474,6 +474,7 @@ def discover(ctx, states):
 
     rooms = _indoor_rooms(ctx, states)
     printers = _printers(ctx, states)
+    vehicles = _vehicles(ctx, states)
 
     # Garage doors (MyQ, ratgdo, Meross ...): covers marked as garage/gate, or with "garage" in the name
     garages = sorted(e for e, st in states.items() if e.startswith("cover.") and (
@@ -503,8 +504,8 @@ def discover(ctx, states):
             cals = []
     weather_eid = o.get("weather_entity") or ("weather.forecast_home" if "weather.forecast_home" in states
                                               else next((e for e in states if e.startswith("weather.")), None))
-    return {"rooms": rooms, "printers": printers, "packages": packages, "health": health, "calendars": cals,
-            "weather": weather_eid, "garages": garages}
+    return {"rooms": rooms, "printers": printers, "vehicles": vehicles, "packages": packages, "health": health,
+            "calendars": cals, "weather": weather_eid, "garages": garages}
 
 
 def _split(v):
@@ -579,6 +580,54 @@ def _printer_temp_sensors(ctx, p, states):
         except Exception:
             found = {}
     return found
+
+
+# ---------------------------------------------------------------- vehicles (Rivian, or any EV battery sensor)
+DEVICE_ENTITIES_TPL = """{%%- set ns = namespace(out=[]) -%%}
+{%%- for e in device_entities(device_id(%s)) -%%}
+  {%%- set ns.out = ns.out + [[e, state_attr(e, 'friendly_name') or '']] -%%}
+{%%- endfor -%%}
+{{ ns.out | to_json }}"""
+
+# Rivian (HACS) names, English: what each of the vehicle's sensors is called
+VEHICLE_PARTS = (("limit", "sensor.", "battery state of charge limit"),
+                 ("range", "sensor.", "estimated vehicle range"),
+                 ("remaining", "sensor.", "charging time remaining"),
+                 ("charger", "sensor.", "charger state"),
+                 ("plug", "binary_sensor.", "charger connection"))
+SOC_NAME = "battery state of charge"
+
+
+def _vehicles(ctx, states):
+    """Each car's state-of-charge sensor plus its range / charge limit / charger sensors, found
+    on the same HA device (so renamed entity ids still work). Rivian is found on its own; the
+    "Vehicle battery" option (comma-separated) adds or replaces it with any EV's sensor."""
+    picked = _split(ctx.opts.get("vehicle"))
+    if not picked:
+        picked = [e for e in ctx.ha.integration_entities("rivian")
+                  if e.startswith("sensor.") and e.endswith("_battery_state_of_charge")]
+    out = []
+    for soc in picked[:2]:
+        fn = str(states.get(soc, {}).get("attributes", {}).get("friendly_name") or "")
+        name = fn[: -len(SOC_NAME)].strip() if fn.lower().endswith(SOC_NAME) else ""
+        if not name:
+            name = re.sub(r"\s*(battery|state of charge|soc|level|%)\b.*$", "", fn, flags=re.I).strip() or "Car"
+        car = {"soc": soc, "name": name, "metric": not ctx.imperial}
+        siblings = []
+        try:
+            siblings = json.loads(ctx.ha.template(DEVICE_ENTITIES_TPL % json.dumps(soc)))
+        except Exception:
+            siblings = []
+        stem = soc.split(".", 1)[1][: -len("_battery_state_of_charge")] if soc.endswith("_battery_state_of_charge") else None
+        for key, domain, label in VEHICLE_PARTS:
+            hit = next((e for e, f in siblings if e.startswith(domain) and f.lower().endswith(" " + label)), None)
+            if not hit and stem:                       # by the usual entity id
+                guess = domain + stem + "_" + label.replace(" ", "_")
+                hit = guess if guess in states else None
+            if hit:
+                car[key] = hit
+        out.append(car)
+    return out
 
 
 # ---------------------------------------------------------------- packages from phone notifications

@@ -68,6 +68,9 @@ configuration:
   printer:
     name: 3D printers (optional)
     description: Print status entities, comma-separated (e.g. sensor.h2c_print_status), if they aren't found automatically. Every Bambu Lab printer is found on its own; only ones printing (or just done) show.
+  vehicle:
+    name: Vehicle battery (optional)
+    description: A car's state-of-charge sensor, comma-separated for two (e.g. sensor.r1t_battery_state_of_charge). Rivian (HACS) is found automatically, with its range and charging status.
   packages:
     name: Packages arriving entity (optional)
     description: A sensor whose number is packages arriving today, if Mail and Packages isn't installed.

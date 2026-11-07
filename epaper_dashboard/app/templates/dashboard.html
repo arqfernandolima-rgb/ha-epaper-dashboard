@@ -200,6 +200,12 @@ body{width:1360px;height:480px;overflow:hidden;background:var(--w);color:var(--k
     <div class="sub" style="margin-top:8px">{% if c.sleep %}{{ icon('moon', 22) }}<b>{{ c.sleep }}</b>{% endif %}{% if c.rhr %}{{ icon('heart-pulse', 22) }}<b>{{ c.rhr }}</b> rest{% endif %}</div>
     {%- endif %}
   </div>
+  {%- elif c.kind == 'car' %}
+  <div class="w" data-k="car">
+    <div class="mh"><span class="lbl ell">{{ c.name }}</span><span class="v20" style="display:inline-flex;align-items:center;gap:4px">{% if c.charging %}{{ icon('zap', 18, 2.5) }}{% endif %}{{ c.soc }}%</span></div>
+    <div class="bar {{ c.lvl }}" style="margin-top:6px"><i style="width:{{ c.soc }}%"></i>{% if c.tick %}<u style="left:{{ c.tick }}%"></u>{% endif %}</div>
+    {%- if c.line and not c.compact %}<div class="small" style="margin-top:6px">{{ c.line }}</div>{% endif %}
+  </div>
   {%- elif c.kind == 'printer' %}
   {%- if c.pct is not none and c.compact %}
   <div class="w" data-k="printer">

@@ -399,6 +399,50 @@ def build_health(states, disc, opts, now, sticky):
     return out
 
 
+CHARGING = {"charging_active", "charging_connecting"}
+CHARGE_PROBLEM = {"charging_vehicle_error", "charging_station_error"}
+
+
+def build_vehicle(states, v, now):
+    """One car: state of charge (bar with the charge-limit mark), range, and charging status."""
+    st = _state(states, v.get("soc"))
+    soc = num((st or {}).get("state"))
+    if soc is None:
+        return None
+    soc = max(0, min(100, int(round(soc))))
+    rng = None
+    rs = _state(states, v.get("range"))
+    r = num((rs or {}).get("state"))
+    if r is not None:
+        unit = str((rs.get("attributes") or {}).get("unit_of_measurement", "")).lower()
+        miles = r * 0.621371 if unit == "km" else r if unit in ("mi", "") else None
+        if v.get("metric"):
+            rng = f"{round(r if unit == 'km' else r / 0.621371)} km"
+        elif miles is not None:
+            rng = f"{round(miles)} mi"
+    limit = num((_state(states, v.get("limit")) or {}).get("state"))
+    charger = str((_state(states, v.get("charger")) or {}).get("state", "")).lower()
+    plugged = (_state(states, v.get("plug")) or {}).get("state") == "on"
+    left = num((_state(states, v.get("remaining")) or {}).get("state"))
+    status, lvl = None, ("poor" if soc < 20 else "")
+    if charger in CHARGING:
+        status = "Charging"
+        if left and left > 0:
+            done = round_to(now + dt.timedelta(minutes=left), 5)     # the estimate jitters by a minute or two
+            day = "" if done.date() == now.date() or done - now < dt.timedelta(hours=12) else f"{done.strftime('%a')} "
+            status += f" · full at {day}{t12(done)}"
+    elif charger in CHARGE_PROBLEM:
+        status, lvl = "Charging problem", "poor"
+    elif charger == "charging_scheduled":
+        status = "Charge scheduled"
+    elif charger == "charging_complete" and plugged:
+        status = "Charged"
+    elif plugged:
+        status = "Plugged in"
+    return {"name": v.get("name") or "Car", "soc": soc, "tick": limit if limit and 0 < limit < 100 else None,
+            "line": " · ".join(x for x in (rng, status) if x), "lvl": lvl, "charging": charger in CHARGING}
+
+
 def idle_hours(opts):
     try:
         return max(1, int(opts.get("hide_idle_hours", 3)))
@@ -569,7 +613,7 @@ def _safe(name, fn, *args, default=None):
 YOU_ROOM = 436                  # 480 - top/bottom padding
 YOU_GAP = 28                    # rule between widgets (14 margin + 2 border + 12 padding)
 YOU_H = {"health": 108, "health_steps": 66, "printer": 98, "printer_nojob": 72, "printer_done": 50,
-         "printer_compact": 46, "printer_temps": 24, "claude_head": 19, "claude_plan": 29, "claude_bar": 25}
+         "printer_compact": 46, "printer_temps": 24, "car": 72, "car_compact": 46, "claude_head": 19, "claude_plan": 29, "claude_bar": 25}
 
 
 def _height(c):
@@ -583,6 +627,8 @@ def _height(c):
             return YOU_H["printer_done"]
         extra = YOU_H["printer_temps"] if c.get("temps") and not c.get("notemps") else 0
         return (YOU_H["printer"] if c.get("job") else YOU_H["printer_nojob"]) + extra
+    if k == "car":
+        return YOU_H["car_compact"] if c.get("compact") or not c.get("line") else YOU_H["car"]
     if k == "claude":
         return YOU_H["claude_head"] + sum(YOU_H["claude_plan"] + YOU_H["claude_bar"] * len(p["bars"])
                                           for p in c["plans"])
@@ -596,7 +642,11 @@ def fit_you(cards):
         for c in cards:
             if c["kind"] == "printer":
                 c["notemps"] = True
-    if total() > YOU_ROOM:                       # then squeeze the printers to one line + bar
+    if total() > YOU_ROOM:                       # then the car loses its range/charging line (the bolt stays)
+        for c in cards:
+            if c["kind"] == "car":
+                c["compact"] = True
+    if total() > YOU_ROOM:                       # then squeeze the printers to one line + bar (finish time + %)
         for c in cards:
             if c["kind"] == "printer":
                 c["compact"] = True
@@ -626,8 +676,9 @@ def build(now, data, disc, opts, sticky, tomorrow):
     }
     health = _safe("health", build_health, states, disc, opts, now, sticky)
     claude = _safe("claude", build_claude, data.get("claude"), now, opts)
-    you = ([{"kind": "health", **health}] if health else []) + [{"kind": "printer", **p} for p in printers] \
-        + ([{"kind": "claude", **claude}] if claude else [])
+    cars = [c for c in (_safe("vehicle", build_vehicle, states, v, now) for v in disc.get("vehicles") or []) if c]
+    you = ([{"kind": "health", **health}] if health else []) + [{"kind": "car", **c} for c in cars] \
+        + [{"kind": "printer", **p} for p in printers] + ([{"kind": "claude", **claude}] if claude else [])
     vm["you"] = fit_you(you)
     vm["claude"] = claude                      # (kept for the status page and tests)
     return vm
