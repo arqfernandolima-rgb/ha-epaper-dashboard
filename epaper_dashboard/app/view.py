@@ -479,8 +479,8 @@ def build_printer(states, p, now, idle_h=3, temps=None):
     if phase in ("printing", "paused", "preparing"):
         out["temps"] = printer_temps(states, p, temps)
         prog = num((_state(states, p + "_print_progress") or {}).get("state")) or 0
-        step = int(prog // 10 * 10)
-        out["pct"], out["pct_text"] = step, f"{step}%"
+        pct = max(0, min(100, int(prog)))           # the real figure at each refresh
+        out["pct"], out["pct_text"] = pct, f"{pct}%"
         end = None
         e = _state(states, p + "_end_time")
         if e:

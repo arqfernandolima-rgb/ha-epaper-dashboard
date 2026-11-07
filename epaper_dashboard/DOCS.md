@@ -9,7 +9,7 @@ The screen updates on one beat: every **Refresh every** minutes (default 5), on 
 - Each update flashes the panel for about 21 seconds. 3 minutes is the panel's minimum, and the app never sends new frames closer together than that.
 - **Flip clock** off: updates where nothing on screen changed are skipped.
 - **Show new alerts right away**: a new alert (garage door, failed print) shows within 3 minutes instead of waiting for the next beat.
-- Readings are rounded and held so tiny wiggles don't count as changes (indoor 1° / 3% / 25 ppb, steps in 500s, printer progress in 10% steps, nozzle and bed to 5°; the finish time is exact).
+- Readings are rounded and held so tiny wiggles don't count as changes (indoor 1° / 3% / 25 ppb, steps in 500s, printer nozzle and bed to 5°; print progress and finish time are exact).
 - Quiet hours (midnight to 6 AM by default): nothing changes. The last frame before them shows tomorrow, without the clock. The first frame after them reads 6:00 right at 6:00.
 
 The display reads `http://<HA address>:8090/frame.epd` and only redraws when the frame's ETag changes.
