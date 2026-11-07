@@ -90,6 +90,8 @@ body{width:1360px;height:480px;overflow:hidden;background:var(--w);color:var(--k
 .row{display:flex;justify-content:space-between;align-items:baseline;font-size:18px;font-weight:600;margin:8px 0 4px}
 .steps{font-size:30px;font-weight:700;letter-spacing:-.02em}
 .small{font-size:16px;font-weight:600}
+.temps{display:flex;gap:14px;margin-top:4px;white-space:nowrap}
+.temps b{font-weight:700}
 .job{font-size:18px;font-weight:600;margin-top:4px}
 .cbar{display:grid;grid-template-columns:64px 1fr 46px;align-items:center;gap:8px;margin-top:3px}
 .cbar b{font-size:18px;font-weight:700;text-align:right}
@@ -210,6 +212,9 @@ body{width:1360px;height:480px;overflow:hidden;background:var(--w);color:var(--k
     {%- if c.job %}<div class="job ell">{{ c.job }}</div>{% endif %}
     <div class="bar" style="margin-top:6px"><i style="width:{{ c.pct }}%"></i></div>
     <div class="small" style="margin-top:6px">{% if c.phase == 'paused' %}<span class="chip up">Paused</span>{% else %}{{ c.line }}{% endif %}</div>
+    {%- if c.temps and not c.notemps %}
+    <div class="small temps">{% for t in c.temps %}<span>{{ t.k }} <b>{{ t.v }}</b></span>{% endfor %}</div>
+    {%- endif %}
   </div>
   {%- else %}
   <div class="w" data-k="printer">

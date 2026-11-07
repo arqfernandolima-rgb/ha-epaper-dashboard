@@ -420,6 +420,32 @@ def build_printers(states, disc, now, opts):
     return cards, alerts
 
 
+def printer_temps(states, p):
+    """Nozzle / bed / chamber temperatures of one printer, in °C (the 3D-printing convention,
+    whatever unit HA shows). Bambu sensors share the printer's prefix; targets are skipped and
+    with several nozzles (H2 series) the hottest one is the one printing. Nozzle and bed are
+    held to 5° steps so small wiggles don't count as changes."""
+    pre = "sensor." + p.split(".", 1)[-1] + "_"
+    hot = {}
+    for eid, st in states.items():
+        if not eid.startswith(pre) or not eid.endswith("temperature") or "target" in eid:
+            continue
+        name = eid[len(pre):]
+        kind = "Nozzle" if "nozzle" in name else "Bed" if "bed" in name else "Chamber" if "chamber" in name else None
+        v = num(st.get("state")) if kind else None
+        if v is None:
+            continue
+        if str((st.get("attributes") or {}).get("unit_of_measurement", "")).upper().endswith("F"):
+            v = (v - 32) * 5 / 9
+        hot[kind] = max(hot.get(kind, v), v)
+    out = []
+    for kind in ("Nozzle", "Bed", "Chamber"):
+        if kind in hot:
+            v = round(hot[kind] / 5) * 5 if kind != "Chamber" else round(hot[kind])
+            out.append({"k": kind, "v": f"{int(v)}°"})
+    return out
+
+
 def build_printer(states, p, now, idle_h=3):
     st = _state(states, p + "_print_status")
     raw = (st or {}).get("state", "offline").lower()
@@ -440,9 +466,10 @@ def build_printer(states, p, now, idle_h=3):
                 if job.lower().endswith(ext):
                     job = job[: -len(ext)]
             break
-    out = {"phase": phase, "job": job, "pct": None, "pct_text": "", "line": "", "end": ""}
+    out = {"phase": phase, "job": job, "pct": None, "pct_text": "", "line": "", "end": "", "temps": []}
     alert = f"Print failed{': ' + job if job else ''}" if phase == "failed" else None
     if phase in ("printing", "paused", "preparing"):
+        out["temps"] = printer_temps(states, p)
         prog = num((_state(states, p + "_print_progress") or {}).get("state")) or 0
         step = int(prog // 10 * 10)
         out["pct"], out["pct_text"] = step, f"{step}%"
@@ -535,7 +562,7 @@ def _safe(name, fn, *args, default=None):
 YOU_ROOM = 436                  # 480 - top/bottom padding
 YOU_GAP = 28                    # rule between widgets (14 margin + 2 border + 12 padding)
 YOU_H = {"health": 108, "health_steps": 66, "printer": 98, "printer_nojob": 72, "printer_done": 50,
-         "printer_compact": 46, "claude_head": 19, "claude_plan": 29, "claude_bar": 25}
+         "printer_compact": 46, "printer_temps": 24, "claude_head": 19, "claude_plan": 29, "claude_bar": 25}
 
 
 def _height(c):
@@ -547,7 +574,8 @@ def _height(c):
             return YOU_H["printer_compact"]
         if c["pct"] is None:
             return YOU_H["printer_done"]
-        return YOU_H["printer"] if c.get("job") else YOU_H["printer_nojob"]
+        extra = YOU_H["printer_temps"] if c.get("temps") and not c.get("notemps") else 0
+        return (YOU_H["printer"] if c.get("job") else YOU_H["printer_nojob"]) + extra
     if k == "claude":
         return YOU_H["claude_head"] + sum(YOU_H["claude_plan"] + YOU_H["claude_bar"] * len(p["bars"])
                                           for p in c["plans"])
@@ -557,7 +585,11 @@ def _height(c):
 def fit_you(cards):
     def total():
         return sum(_height(c) for c in cards) + YOU_GAP * max(0, len(cards) - 1)
-    if total() > YOU_ROOM:                       # first squeeze the printers to one line + bar
+    if total() > YOU_ROOM:                       # first the printer temperatures go
+        for c in cards:
+            if c["kind"] == "printer":
+                c["notemps"] = True
+    if total() > YOU_ROOM:                       # then squeeze the printers to one line + bar
         for c in cards:
             if c["kind"] == "printer":
                 c["compact"] = True

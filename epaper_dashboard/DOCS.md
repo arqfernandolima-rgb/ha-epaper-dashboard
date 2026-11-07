@@ -9,7 +9,7 @@ The screen updates on one beat: every **Refresh every** minutes (default 5), on 
 - Each update flashes the panel for about 21 seconds. 3 minutes is the panel's minimum, and the app never sends new frames closer together than that.
 - **Flip clock** off: updates where nothing on screen changed are skipped.
 - **Show new alerts right away**: a new alert (garage door, failed print) shows within 3 minutes instead of waiting for the next beat.
-- Readings are rounded and held so tiny wiggles don't count as changes (indoor 1° / 3% / 25 ppb, steps in 500s, printer progress in 10% steps, finish time to 15 minutes).
+- Readings are rounded and held so tiny wiggles don't count as changes (indoor 1° / 3% / 25 ppb, steps in 500s, printer progress in 10% steps, finish time to 15 minutes, nozzle and bed to 5°).
 - Quiet hours (midnight to 6 AM by default): nothing changes. The last frame before them shows tomorrow, without the clock. The first frame after them reads 6:00 right at 6:00.
 
 The display reads `http://<HA address>:8090/frame.epd` and only redraws when the frame's ETag changes.
@@ -24,7 +24,7 @@ The display reads `http://<HA address>:8090/frame.epd` and only redraws when the
 | Claude | Your Clawdmeter daemon pushes Max and Enterprise usage to `http://<HA>:8090/claude`; a plan with no new usage for a few hours hides | two lines in the daemon's config (shown on the sidebar page) |
 | Calendar | Home Assistant calendar entities | any calendar integration |
 | Indoor air | any temperature / humidity / VOC / CO2 sensors, per area (up to 3 rooms); a reading the main sensor lacks (CO2 on a Wave Mini) comes from another sensor in the same area | list areas in "Indoor rooms" (default: every Airthings device) |
-| 3D printers | Bambu Lab integration (HACS), every printer; only ones printing or just done show | found automatically |
+| 3D printers | Bambu Lab integration (HACS), every printer; only ones printing or just done show: progress, finish time, and nozzle / bed / chamber temperatures (°C) when there's room | found automatically |
 | Packages | Nest package alerts from your phone (companion app "Last notification" sensor, Google Home app only), and/or Mail and Packages | turn on the sensor in the companion app |
 | Health | Companion app Health Connect sensors | enable Daily steps, Sleep duration, Resting heart rate in the app |
 | Garage | any garage door (MyQ, ratgdo ...): banner after it's been open 10 minutes | found automatically |
@@ -32,7 +32,7 @@ The display reads `http://<HA address>:8090/frame.epd` and only redraws when the
 
 ### The You column
 
-Health is always there. Everything else shows only while it's active: a printer while it prints (and for a while after it finishes), a Claude plan while its usage is moving. **Hide idle items after** (default 3 hours) sets "a while". If the column gets full (two prints and both plans), printers shrink to one line, then the last item drops.
+Health is always there. Everything else shows only while it's active: a printer while it prints (and for a while after it finishes), a Claude plan while its usage is moving. **Hide idle items after** (default 3 hours) sets "a while". If the column gets full (two prints and both plans), printer temperatures go first, then printers shrink to one line, then the last item drops.
 
 ### Packages from Nest
 
