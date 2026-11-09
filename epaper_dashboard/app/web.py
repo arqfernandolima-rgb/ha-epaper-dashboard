@@ -157,7 +157,7 @@ def status(app):
     pk = d.get("packages") or {}
     found = [
         ("Indoor air", [room(r) for r in d.get("rooms") or []]),
-        ("Vehicles", [f"{v['name']}: {v['soc']}" + (" · " + ", ".join(k for k in ("range", "limit", "charger", "remaining", "plug") if v.get(k))
+        ("Vehicles", [f"{v.get('label') or v['name']}: {v['soc']}" + (" · " + ", ".join(k for k in ("range", "limit", "charger", "remaining", "plug") if v.get(k))
                       if any(v.get(k) for k in ("range", "limit", "charger", "remaining", "plug")) else "")
                       for v in d.get("vehicles") or []]),
         ("3D printers", [f"{p['name']}: {p['id']}_* · " + (("temperatures: " + ", ".join(k.lower() for k in p["temps"]))

@@ -12,7 +12,7 @@ import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
 
-VERSION = "0.7.1"
+VERSION = "0.7.2"
 UA = f"epaper-dashboard/{VERSION} (+https://github.com/arqfernandolima-rgb/ha-epaper-dashboard)"
 
 
@@ -588,7 +588,8 @@ VEHICLE_TPL = """{%%- set d = device_id(%s) -%%}
 {%%- for e in (device_entities(d) if d else []) -%%}
   {%%- set ns.out = ns.out + [[e, state_attr(e, 'friendly_name') or '']] -%%}
 {%%- endfor -%%}
-{{ {"name": (device_attr(d, 'name_by_user') or device_attr(d, 'name') or '') if d else '', "entities": ns.out} | to_json }}"""
+{{ {"name": (device_attr(d, 'name_by_user') or device_attr(d, 'name') or '') if d else '',
+    "model": (device_attr(d, 'model') or '') if d else '', "entities": ns.out} | to_json }}"""
 
 # Rivian (HACS) names, English: what each of the vehicle's sensors is called
 VEHICLE_PARTS = (("limit", "sensor.", "battery state of charge limit"),
@@ -609,10 +610,11 @@ def _vehicles(ctx, states):
                   if e.startswith("sensor.") and e.endswith("_battery_state_of_charge")]
     out = []
     for soc in picked[:2]:
-        dev_name, siblings = "", []
+        dev_name, model, siblings = "", "", []
         try:
             got = json.loads(ctx.ha.template(VEHICLE_TPL % json.dumps(soc)))
             dev_name, siblings = str(got.get("name") or "").strip(), got.get("entities") or []
+            model = str(got.get("model") or "").strip()
         except Exception:
             pass
         # the name you gave the car (its HA device), else from the sensor's name, else "Car"
@@ -620,7 +622,7 @@ def _vehicles(ctx, states):
         name = dev_name or (fn[: -len(SOC_NAME)].strip() if fn.lower().endswith(SOC_NAME) else "")
         if not name:
             name = re.sub(r"\s*(battery|state of charge|soc|level|%)\b.*$", "", fn, flags=re.I).strip() or "Car"
-        car = {"soc": soc, "name": name, "metric": not ctx.imperial}
+        car = {"soc": soc, "name": name, "model": model, "metric": not ctx.imperial}
         stem = soc.split(".", 1)[1][: -len("_battery_state_of_charge")] if soc.endswith("_battery_state_of_charge") else None
         for key, domain, label in VEHICLE_PARTS:
             hit = next((e for e, f in siblings if e.startswith(domain) and f.lower().endswith(" " + label)), None)
@@ -630,6 +632,10 @@ def _vehicles(ctx, states):
             if hit:
                 car[key] = hit
         out.append(car)
+    # label by model (R1T) unless two cars share it, then by the names you gave them
+    models = [c["model"] for c in out]
+    for c in out:
+        c["label"] = c["model"] if c["model"] and models.count(c["model"]) == 1 else c["name"]
     return out
 
 

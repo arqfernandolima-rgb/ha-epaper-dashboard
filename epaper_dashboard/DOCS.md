@@ -24,7 +24,7 @@ The display reads `http://<HA address>:8090/frame.epd` and only redraws when the
 | Claude | Your Clawdmeter daemon pushes Max and Enterprise usage to `http://<HA>:8090/claude`; a plan with no new usage for a few hours hides | two lines in the daemon's config (shown on the sidebar page) |
 | Calendar | Home Assistant calendar entities | any calendar integration |
 | Indoor air | any temperature / humidity / VOC / CO2 sensors, per area (up to 3 rooms); a reading the main sensor lacks (CO2 on a Wave Mini) comes from another sensor in the same area | list areas in "Indoor rooms" (default: every Airthings device) |
-| Car | Rivian integration (HACS): state of charge with the charge-limit mark, range, charging status ("Charging · full at 6:40 AM", "Plugged in", "Charge scheduled"); red under 20% | found automatically (or any EV's battery sensor in Configuration) |
+| Car | Rivian integration (HACS), labeled by model (R1T): shows only when it's below 25% (red), charging ("Charging · full at 6:40 AM"), or plugged in waiting to charge ("Plugged in", "Charge scheduled"); bar with the charge-limit mark, plus range | found automatically (or any EV's battery sensor in Configuration) |
 | 3D printers | Bambu Lab integration (HACS), every printer; only ones printing or just done show: progress, finish time, and nozzle / bed / chamber temperatures (°C) when there's room | found automatically |
 | Packages | Nest package alerts from your phone (companion app "Last notification" sensor, Google Home app only), and/or Mail and Packages | turn on the sensor in the companion app |
 | Health | Companion app Health Connect sensors | enable Daily steps, Sleep duration, Resting heart rate in the app |
@@ -33,7 +33,7 @@ The display reads `http://<HA address>:8090/frame.epd` and only redraws when the
 
 ### The You column
 
-Health and your car are always there. Everything else shows only while it's active: a printer while it prints (and for a while after it finishes), a Claude plan while its usage is moving. **Hide idle items after** (default 3 hours) sets "a while". If the column gets full (two prints and both plans), printer temperatures go first, then printers shrink to one line, then the car drops its range line, then the last item drops.
+Health is always there. Everything else shows only while it's active (the car when it's low, charging or plugged in): a printer while it prints (and for a while after it finishes), a Claude plan while its usage is moving. **Hide idle items after** (default 3 hours) sets "a while". If the column gets full (two prints and both plans), printer temperatures go first, then printers shrink to one line, then the car drops its range line, then the last item drops.
 
 ### Packages from Nest
 

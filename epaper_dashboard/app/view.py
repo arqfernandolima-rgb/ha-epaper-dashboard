@@ -400,6 +400,7 @@ def build_health(states, disc, opts, now, sticky):
 
 
 CHARGING = {"charging_active", "charging_connecting"}
+CAR_LOW = 25          # below this the car card shows (in red) even when it isn't plugged in
 CHARGE_PROBLEM = {"charging_vehicle_error", "charging_station_error"}
 
 
@@ -424,7 +425,7 @@ def build_vehicle(states, v, now):
     charger = str((_state(states, v.get("charger")) or {}).get("state", "")).lower()
     plugged = (_state(states, v.get("plug")) or {}).get("state") == "on"
     left = num((_state(states, v.get("remaining")) or {}).get("state"))
-    status, lvl = None, ("poor" if soc < 20 else "")
+    status, lvl = None, ("poor" if soc < CAR_LOW else "")
     if charger in CHARGING:
         status = "Charging"
         if left and left > 0:
@@ -439,7 +440,12 @@ def build_vehicle(states, v, now):
         status = "Charged"
     elif plugged:
         status = "Plugged in"
-    return {"name": v.get("name") or "Car", "soc": soc, "tick": limit if limit and 0 < limit < 100 else None,
+    # only worth a glance when it's low, charging, or plugged in waiting to charge (not when full)
+    waiting = plugged and charger != "charging_complete"
+    if not (soc < CAR_LOW or charger in CHARGING or charger in CHARGE_PROBLEM or waiting):
+        return None
+    return {"name": v.get("label") or v.get("name") or "Car", "soc": soc,
+            "tick": limit if limit and 0 < limit < 100 else None,
             "line": " · ".join(x for x in (rng, status) if x), "lvl": lvl, "charging": charger in CHARGING}
 
 
