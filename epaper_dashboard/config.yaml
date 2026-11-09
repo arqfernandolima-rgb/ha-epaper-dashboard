@@ -1,7 +1,7 @@
 name: E-paper Dashboard
-version: "0.7.2"
+version: "0.8.0"
 slug: epaper_dashboard
-description: Draws the office e-paper dashboard and serves it to the ESP32 display
+description: Draws the office e-paper dashboard and the kitchen display pages, and serves them to the displays
 url: https://github.com/arqfernandolima-rgb/ha-epaper-dashboard
 arch:
   - aarch64
@@ -17,7 +17,7 @@ panel_title: E-paper
 ports:
   8090/tcp: 8090
 ports_description:
-  8090/tcp: "Frame for the display: http://<HA address>:8090/frame.epd"
+  8090/tcp: "Frames for the displays: http://<HA address>:8090/frame.epd and /kitchen.png"
 options:
   stocks:
     - symbol: ADSK
@@ -35,6 +35,7 @@ options:
   garage_alerts: true
   garage_alert_minutes: 10
   hide_idle_hours: 3
+  kitchen_refresh_minutes: 15
   alerts: []
 schema:
   stocks:
@@ -53,6 +54,7 @@ schema:
   garage_alerts: bool
   garage_alert_minutes: int(0,240)
   hide_idle_hours: int(1,48)
+  kitchen_refresh_minutes: int(5,60)
   alerts:
     - entity: str
       state: str
@@ -73,3 +75,4 @@ schema:
   steps: str?
   sleep: str?
   resting_heart_rate: str?
+  kitchen_stay_awake: str?

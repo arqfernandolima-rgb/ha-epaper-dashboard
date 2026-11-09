@@ -7,6 +7,7 @@ reads that round time. The display is told when to check next (X-Poll-In header)
 it fetches ~25 s early and the new frame finishes appearing right on the minute.
 If the clock is off and nothing on screen changed, that refresh is skipped.
 New alerts can show at the display's next check-in instead of waiting for the beat.
+The kitchen display (kitchen.py) gets its own black-and-white pages from the same server.
 """
 import datetime as dt
 import hashlib
@@ -19,6 +20,7 @@ import time
 from zoneinfo import ZoneInfo
 
 import ha as ha_api
+import kitchen
 import render
 import sources
 import view
@@ -133,6 +135,7 @@ class App:
         self.last_key, self.drawn_at, self.colors = None, None, {}
         self.render_error, self.render_secs, self.state = None, None, "starting"
         self.last_poll = None
+        self.kitchen = kitchen.Kitchen(self, DATA, WORK)   # the battery reTerminal (GET /kitchen/...)
         self._load()
         self._load_claude()
 
@@ -339,6 +342,7 @@ class App:
         self.vm, self.vm_key, self.vm_tomorrow = vm, key, tomorrow
 
         self.ensure_frame(now, forced)
+        self.kitchen.prepare(self.now())
 
     def note_poll(self, ip, code):
         self.last_poll = {"at": dt.datetime.now(self.ctx.tz).isoformat(), "ip": ip, "code": code}
@@ -355,6 +359,9 @@ class App:
             now = self.now()
             wait = min(60 - time.time() % 60 + 1,
                        (self.next_fetch(now) - PREP - now).total_seconds() + 1)
+            k = self.kitchen.wait_hint(now)               # draw the kitchen page before it wakes up
+            if k is not None and k > 0:
+                wait = min(wait, k)
             self.update_now.wait(timeout=max(1.0, wait))
 
 

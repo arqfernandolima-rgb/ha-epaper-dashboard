@@ -15,4 +15,10 @@ A Home Assistant app that draws an office dashboard for the Waveshare 10.85" (G)
 
 See [the app's docs](epaper_dashboard/DOCS.md) for settings and data sources.
 
+## Kitchen display (optional)
+
+A second, battery-powered screen: Seeed's reTerminal E1001 (7.5" black and white, 800×480) running ESPHome as a thin client. The app draws its pages; the display wakes every 15 minutes (or on a button), downloads its page from `http://<HA address>:8090/kitchen.png`, shows it and deep-sleeps. Left/right flip pages, green refreshes.
+
+The ESPHome config: [`esphome/kitchen-display.yaml`](esphome/kitchen-display.yaml).
+
 Fonts: Barlow (SIL Open Font License). Icons: Lucide (ISC).

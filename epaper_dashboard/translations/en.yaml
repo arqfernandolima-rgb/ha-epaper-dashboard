@@ -35,6 +35,9 @@ configuration:
   hide_idle_hours:
     name: Hide idle items after (hours)
     description: The You column shows Health always, plus only what's active. A Claude plan with no new usage, or a finished or failed print, leaves after this many hours.
+  kitchen_refresh_minutes:
+    name: Kitchen display refresh (minutes)
+    description: How often the battery kitchen display (reTerminal E1001) wakes up on its own, on round times. Fewer wake-ups means longer battery life. It sleeps through quiet hours; its buttons always wake it.
   alerts:
     name: Alerts
     description: Red banners at the bottom of the Today column. Each one shows its text while the entity is in that state (e.g. cover.garage_door / open / Garage door open).
@@ -86,5 +89,8 @@ configuration:
   resting_heart_rate:
     name: Resting heart rate entity (optional)
     description: Resting heart rate sensor.
+  kitchen_stay_awake:
+    name: Kitchen display stay-awake switch (optional)
+    description: A toggle helper that keeps the kitchen display awake (for firmware updates) while it's on. Default input_boolean.kitchen_display_stay_awake.
 network:
-  8090/tcp: Frame for the display (http://<HA address>:8090/frame.epd)
+  8090/tcp: Frames for the displays (http://<HA address>:8090/frame.epd and /kitchen.png)

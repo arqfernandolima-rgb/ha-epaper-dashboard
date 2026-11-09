@@ -39,9 +39,22 @@ Health is always there. Everything else shows only while it's active (the car wh
 
 The Nest integration doesn't pass package events to Home Assistant, but your phone gets them from the Google Home app. In the companion app: **Settings > Companion app > Manage sensors > Last notification**, turn it on, allow notification access, and in its **Allow list** pick only **Google Home**. The dashboard reads today's history of that sensor and counts "package" alerts (delivered, or picked up). It ignores every other notification, and with the allow list set, nothing else reaches Home Assistant.
 
+## Kitchen display (reTerminal E1001)
+
+A second, battery-powered display: Seeed's reTerminal E1001 (7.5" black and white, 800x480) running ESPHome as a thin client. The app draws its pages (same fonts and look as the office panel); the display only downloads and shows them, then deep-sleeps.
+
+- It wakes on its own every **Kitchen display refresh** minutes (default 15), on round times, and sleeps through quiet hours. Any button wakes it right away.
+- Buttons: **left** previous page, **right** next page, **green** refresh. After a press it stays awake 30 seconds, so more presses flip pages with a quick partial refresh.
+- Each wake: `GET http://<HA>:8090/kitchen/plan?act=<timer|refresh|next|prev>&bat=<volts>` answers `<sleep seconds> <full refresh 0/1> <stay awake 0/1>`, then `GET /kitchen.png?act=...` returns the page as a 1-bit PNG (or 304 on a timer wake when nothing changed, so the panel isn't refreshed for nothing). Pages for timer wakes are drawn ahead of time, so the display isn't kept awake waiting.
+- The first update of each day, and every green-button press, is a full refresh, which clears any ghosting the quick refreshes leave behind.
+- Battery: shown on the sidebar page and published to Home Assistant as `sensor.kitchen_display_battery` at every wake.
+- Firmware updates: turn on a toggle helper named **Kitchen display stay awake** (`input_boolean.kitchen_display_stay_awake`), press any button on the display, and it stays awake for the ESPHome update. Turn the helper off and it goes back to sleep within a couple of minutes.
+
+The ESPHome config is in this repository at `esphome/kitchen-display.yaml`.
+
 The sidebar page shows a live preview, what was found in Home Assistant, and the status of each source. **Update now** draws a frame right away.
 
 ## Ports
 
-- `8090`: the frame, for the display (LAN only, no login, serves nothing else).
+- `8090`: the frames, for the displays (LAN only, no login): `/frame.epd`, `/kitchen/plan`, `/kitchen.png`, plus `/claude` for the Clawdmeter daemon (needs its token).
 - The sidebar page is only reachable through Home Assistant.

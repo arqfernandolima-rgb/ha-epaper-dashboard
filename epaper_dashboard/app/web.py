@@ -1,6 +1,7 @@
 """Two small web servers.
 
-:8090  the frame for the display (LAN). Only /frame.epd, with ETag / 304.
+:8090  the frames for the displays (LAN): /frame.epd (office, ETag / 304), /kitchen/plan and
+       /kitchen.png (the battery kitchen display), and POST /claude (Clawdmeter, needs the token).
 :8099  the status page shown in HA's sidebar (ingress). Only accepts the Supervisor.
 """
 import datetime as dt
@@ -77,9 +78,27 @@ def frame_handler(app):
             app.note_poll(ip, 200)
             self.send(200, frame, "application/octet-stream", {"ETag": tag, "Cache-Control": "no-cache", **hdr}, head)
 
+        def _kitchen(self):
+            q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            act = (q.get("act") or ["timer"])[0]
+            now = app.now()
+            if self.route == "/kitchen/plan":
+                body = app.kitchen.plan(act, (q.get("bat") or [None])[0], self.client_address[0], now)
+                return self.send(200, body.encode(), headers={"Cache-Control": "no-store"})
+            try:
+                code, png = app.kitchen.image(act, now)
+            except Exception as e:
+                log.warning("kitchen page: %s", e)
+                return self.send(503, b"couldn't draw the page\n")
+            if code == 304:
+                return self.send(304)
+            self.send(200, png, "image/png", {"Cache-Control": "no-store"})
+
         def do_GET(self):
             if self.route == "/frame.epd":
                 return self._frame()
+            if self.route in ("/kitchen/plan", "/kitchen.png"):
+                return self._kitchen()
             if self.route == "/":
                 return self.send(200, b"E-paper dashboard. The display reads /frame.epd\n")
             self.send(404, b"not found\n")
@@ -190,6 +209,7 @@ def status(app):
         "stocks": ", ".join(s["symbol"] for s in app.opts.get("stocks", [])),
         "version": os.environ.get("DASH_VERSION", ""),
         "push_token": app.push_token,
+        "kitchen": app.kitchen.status(tz),
     }
 
 
@@ -223,6 +243,12 @@ def ingress_handler(app):
                     return self.send(404, b"not drawn yet\n")
                 return self.send(200, f, "application/octet-stream",
                                  {"Content-Disposition": 'attachment; filename="frame.epd"'})
+            if r == "/kitchen.png":
+                try:
+                    _, png = app.kitchen.image(None, app.now(), device=False)
+                except Exception as e:
+                    return self.send(503, f"couldn't draw: {e}\n".encode())
+                return self.send(200, png, "image/png", {"Cache-Control": "no-store"})
             self.send(404, b"not found\n")
 
         def do_POST(self):

@@ -1,0 +1,83 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+@font-face{font-family:Barlow;src:url({{ static }}/fonts/barlow-latin-400-normal.woff2);font-weight:400}
+@font-face{font-family:Barlow;src:url({{ static }}/fonts/barlow-latin-500-normal.woff2);font-weight:500}
+@font-face{font-family:Barlow;src:url({{ static }}/fonts/barlow-latin-600-normal.woff2);font-weight:600}
+@font-face{font-family:Barlow;src:url({{ static }}/fonts/barlow-latin-700-normal.woff2);font-weight:700}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{width:800px;height:480px;overflow:hidden;background:#fff;color:#000;
+  font-family:Barlow,"DejaVu Sans";font-weight:500;font-feature-settings:'tnum' 1;-webkit-font-smoothing:none}
+.ic{display:block;flex:none}
+.wrap{height:480px;padding:20px 24px 0;display:flex;flex-direction:column}
+.lbl{font-size:16px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+.top{display:flex;justify-content:space-between;align-items:baseline;padding-bottom:10px;border-bottom:3px solid #000}
+.body{flex:1;min-height:0}
+/* page 1: setup check */
+.st{display:grid;grid-template-columns:1fr 1fr;height:100%}
+.st>div{padding:20px 0 0;display:flex;flex-direction:column;gap:22px}
+.st>div+div{border-left:2px solid #000;padding-left:24px}
+.batt{display:flex;align-items:center;gap:22px}
+.cell{width:120px;height:58px;border:5px solid #000;border-radius:6px;position:relative;padding:5px}
+.cell:after{content:"";position:absolute;right:-14px;top:15px;width:9px;height:18px;background:#000;border-radius:0 3px 3px 0}
+.cell i{display:block;height:100%;background:#000;border-radius:1px}
+.big{font-size:72px;font-weight:700;line-height:.9;letter-spacing:-.02em}
+.mid{font-size:30px;font-weight:600;line-height:1.1}
+.sm{font-size:20px;font-weight:500;margin-top:4px}
+/* page 2: type sizes */
+.ty{padding-top:10px;display:flex;flex-direction:column;gap:3px}
+.ty .r{display:flex;align-items:baseline;gap:14px;white-space:nowrap;overflow:hidden}
+.ty .r b{font-size:14px;font-weight:600;width:66px;flex:none;text-align:right}
+.icons{display:flex;align-items:flex-end;gap:18px;margin-top:6px}
+.lines{display:flex;flex-direction:column;gap:5px;margin-left:auto;width:200px}
+.lines i{display:block;background:#000}
+.check{width:70px;height:70px;background:repeating-conic-gradient(#000 0 25%,#fff 0 50%) 0 0/14px 14px;border:2px solid #000}
+/* footer: what the buttons do */
+.keys{display:grid;grid-template-columns:1fr 1fr 1fr;border-top:3px solid #000;height:62px}
+.keys>div{display:flex;align-items:center;justify-content:center;gap:10px;font-size:22px;font-weight:600}
+.keys>div+div{border-left:2px solid #000}
+.keys .g{background:#000;color:#fff}
+</style></head><body><div class="wrap">
+<div class="top">
+  <div class="lbl">Kitchen display · {{ 'setup check' if k.page == 'setup' else 'type sizes' }}</div>
+  <div class="lbl">Page {{ k.n }} / {{ k.of }}</div>
+</div>
+<div class="body">
+{% if k.page == 'setup' %}
+  <div class="st">
+    <div>
+      <div class="batt">
+        <div class="cell"><i style="width:{{ k.bat or 0 }}%"></i></div>
+        <div><div class="big">{{ k.bat if k.bat is not none else '–' }}%</div>
+          <div class="sm">{{ k.bat_v or 'no battery reading yet' }}</div></div>
+      </div>
+      <div><div class="lbl">Drawn</div><div class="mid">{{ k.drawn }}</div>
+        <div class="sm">every {{ k.every }} min · wake #{{ k.wakes }}</div></div>
+    </div>
+    <div>
+      <div><div class="lbl">Woke up by</div><div class="mid">{{ k.woke }}</div></div>
+      <div><div class="lbl">Next update</div><div class="mid">{{ k.next }}</div></div>
+      <div class="sm">After a button press it stays awake 30 s:<br>left / right flip pages with a quick partial refresh.</div>
+    </div>
+  </div>
+{% else %}
+  <div class="ty">
+    <div class="r"><b>96 · 700</b><span style="font-size:96px;font-weight:700;line-height:1">72° 2:15</span></div>
+    <div class="r"><b>56 · 700</b><span style="font-size:56px;font-weight:700;line-height:1.05">Kitchen 41%</span></div>
+    <div class="r"><b>36 · 600</b><span style="font-size:36px;font-weight:600">Dentist with Ana · 3:00 PM</span></div>
+    <div class="r"><b>26 · 500</b><span style="font-size:26px;font-weight:500">Partly cloudy, high 61°, low 44°</span></div>
+    <div class="r"><b>20 · 600</b><span style="font-size:20px;font-weight:600">Package delivered 2:14 PM · R1T 68% · 1 h 20 m left</span></div>
+    <div class="icons">
+      {{ icon('cloud-sun', 64, 2) }}{{ icon('umbrella', 48, 2.25) }}{{ icon('package', 36, 2.5) }}{{ icon('zap', 24, 2.5) }}
+      <div class="check"></div>
+      <div class="lines"><i style="height:1px"></i><i style="height:2px"></i><i style="height:3px"></i><i style="height:5px"></i><i style="height:8px"></i></div>
+    </div>
+  </div>
+{% endif %}
+</div>
+<div class="keys">
+  <div>{{ icon('chevron-left', 28, 3) }}Left · previous</div>
+  <div class="g">{{ icon('refresh-cw', 24, 3) }}Green · refresh</div>
+  <div>Right · next{{ icon('chevron-right', 28, 3) }}</div>
+</div>
+</div></body></html>

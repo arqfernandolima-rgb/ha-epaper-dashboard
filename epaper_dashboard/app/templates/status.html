@@ -47,6 +47,16 @@ code{font-size:13px;overflow-wrap:anywhere}
     {% for x in s.sources %}<tr><td>{{ x.name }}</td><td>{% if x.ok %}<span class="ok">OK</span> · {{ x.when }}{% elif x.note %}<span class="none">{{ x.note }}</span>{% elif x.error %}<span class="bad">Error</span> · last good {{ x.when }}<div class="err">{{ x.error }}</div>{% else %}<span class="none">waiting</span>{% endif %}</td></tr>{% endfor %}
     <tr><td>Stocks</td><td>{{ s.stocks or '—' }}</td></tr>
   </table></div>
+  {% set k = s.kitchen %}<div class="card"><h2>Kitchen display</h2>
+    <img src="kitchen.png" alt="What the kitchen display shows" style="display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:4px;margin-bottom:8px">
+    <table>
+    <tr><td>Last check-in</td><td>{% if k.seen %}{{ k.seen }} · woken by {{ k.woke }}{% if k.result %} · {{ k.result }}{% endif %} <span class="meta">({{ k.ip }})</span>{% else %}<span class="none">Not yet. Flash the ESPHome config.</span>{% endif %}</td></tr>
+    <tr><td>Battery</td><td>{{ k.battery or '—' }}</td></tr>
+    <tr><td>Page</td><td>{{ k.page }} · next update {{ k.next or '—' }}</td></tr>
+    <tr><td>Refresh</td><td>Every {{ k.every }} min on its own, asleep in quiet hours; {{ k.wakes }} wake-ups so far</td></tr>
+    <tr><td>Stay awake switch</td><td><code>{{ k.stay }}</code></td></tr>
+    <tr><td>Addresses</td><td><code>http://&lt;HA address&gt;:8090/kitchen/plan</code><br><code>http://&lt;HA address&gt;:8090/kitchen.png</code></td></tr>
+  </table></div>
   <div class="card"><h2>Clawdmeter daemon settings</h2>
     <p class="meta" style="margin:0 0 8px">Add these two lines to the daemon's config file to send Claude usage here:</p>
     <code>dashboard_url = http://&lt;HA address&gt;:8090/claude<br>dashboard_token = {{ s.push_token }}</code>

@@ -1,4 +1,4 @@
-"""View -> HTML -> headless Chromium screenshot -> 4 panel colors -> .epd frame."""
+"""View -> HTML -> headless Chromium screenshot -> 4 panel colors -> .epd frame (and 1-bit PNGs for the kitchen)."""
 import io
 import os
 import re
@@ -87,16 +87,17 @@ def chromium():
     raise RuntimeError("Chromium not found")
 
 
-def screenshot(html, workdir):
+def screenshot(html, workdir, size=(W, H), name="dash"):
+    w, h = size
     workdir = os.path.abspath(workdir)
     os.makedirs(workdir, exist_ok=True)
-    src, out = os.path.join(workdir, "dash.html"), os.path.join(workdir, "shot.png")
+    src, out = os.path.join(workdir, name + ".html"), os.path.join(workdir, name + ".png")
     with open(src, "w") as f:
         f.write(html)
     if os.path.exists(out):
         os.remove(out)
     cmd = [chromium(), "--headless", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
-           "--hide-scrollbars", "--force-device-scale-factor=1", f"--window-size={W},{H}",
+           "--hide-scrollbars", "--force-device-scale-factor=1", f"--window-size={w},{h}",
            # pixel-hinted text, no smoothing (the style picked on the real panel)
            "--font-render-hinting=full", "--disable-lcd-text", "--disable-font-subpixel-positioning",
            "--disable-component-update", "--disable-background-networking", "--disable-extensions",
@@ -110,9 +111,18 @@ def screenshot(html, workdir):
         raise RuntimeError("Chromium didn't produce a screenshot: " + " | ".join(tail))
     img = Image.open(out).convert("RGB")
     img.load()
-    if img.size != (W, H):
-        raise RuntimeError(f"screenshot is {img.size}, expected {W}x{H}")
+    if img.size != (w, h):
+        raise RuntimeError(f"screenshot is {img.size}, expected {w}x{h}")
     return img
+
+
+def mono_png(img):
+    """Black and white only (no dithering), as a 1-bit PNG for ESPHome's online_image."""
+    g = np.asarray(img.convert("L"))
+    bw = Image.fromarray(np.where(g >= 128, 255, 0).astype(np.uint8)).convert("1", dither=Image.Dither.NONE)
+    b = io.BytesIO()
+    bw.save(b, "PNG", optimize=True)
+    return b.getvalue()
 
 
 def to_codes(img):

@@ -1,0 +1,421 @@
+# Kitchen display: Seeed reTerminal E1001 (7.5" black and white e-paper, 800x480, battery)
+#
+# A thin client for the E-paper Dashboard app on Home Assistant. The app draws the
+# pages; this only downloads one, shows it and deep-sleeps until the next round time.
+#
+#   Timer wake    every 15 min (set in the app), asleep through quiet hours
+#   Green button  refresh (a full, clean redraw)
+#   Right button  next page          Left button  previous page
+#   After a press it stays awake 30 s, so more presses flip pages with a quick partial refresh.
+#
+# Each wake: GET /kitchen/plan?act=...&bat=<volts>  ->  "<sleep s> <full 0/1> <stay awake 0/1>"
+#            GET /kitchen.png?act=...               ->  the page (1-bit PNG), or 304 if unchanged
+#
+# Setup: create a new ESP32-S3 device in the ESPHome Device Builder, keep the api
+# encryption key and ota password it generated, and replace everything else with this file.
+
+substitutions:
+  name: kitchen-display
+  friendly_name: Kitchen display
+  # The E-paper Dashboard app (Home Assistant's address, port 8090)
+  dashboard: "http://192.168.50.55:8090"
+  # Quick (partial) refreshes allowed between full ones while you flip pages
+  quick_refreshes: "30"
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  includes:
+    - <driver/rtc_io.h>
+  on_boot:
+    - priority: 600
+      then:
+        # The buttons keep their pull-ups while asleep, so only a real press wakes it
+        - lambda: |-
+            for (auto pin : {GPIO_NUM_3, GPIO_NUM_4, GPIO_NUM_5}) {
+              rtc_gpio_pullup_en(pin);
+              rtc_gpio_pulldown_dis(pin);
+            }
+        # Battery: the voltage divider is only powered while it's read (before Wi-Fi starts drawing)
+        - lambda: |-
+            id(battery_enable).turn_on();
+            delay(10);
+            id(battery_voltage).update();
+            id(battery_enable).turn_off();
+    - priority: -100
+      then:
+        - script.execute: wake_up
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+# Logs come out of the USB-C port (CH340 serial chip)
+logger:
+  hardware_uart: UART0
+
+api:
+  encryption:
+    key: "PASTE-THE-KEY-THE-WIZARD-MADE"
+  reboot_timeout: 0s
+
+ota:
+  - platform: esphome
+    password: "PASTE-THE-PASSWORD-THE-WIZARD-MADE"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true        # connect straight to your network, no scan (faster wake-ups)
+  # A fixed address saves another half second per wake. Optional:
+  # manual_ip:
+  #   static_ip: 192.168.50.60
+  #   gateway: 192.168.50.1
+  #   subnet: 255.255.255.0
+
+http_request:
+  timeout: 20s              # room for the app to draw a page on a button press
+
+spi:
+  clk_pin: GPIO7
+  mosi_pin: GPIO9
+
+globals:
+  - id: act                 # why we're awake: timer, refresh, next, prev
+    type: std::string
+    initial_value: '"timer"'
+  - id: sleep_s             # what the dashboard said (until the next round time)
+    type: int
+    initial_value: "900"
+  - id: plan_ms             # when it said it
+    type: uint32_t
+    initial_value: "0"
+  - id: plan_ok
+    type: bool
+    initial_value: "false"
+  - id: full                # a full, clean refresh this time
+    type: bool
+    initial_value: "false"
+  - id: stay                # the stay-awake switch in Home Assistant is on
+    type: bool
+    initial_value: "false"
+  - id: pressed             # a button was pressed while awake
+    type: bool
+    initial_value: "false"
+  - id: img                 # 0 downloading, 1 new page, 2 unchanged, 3 failed
+    type: int
+    initial_value: "0"
+
+deep_sleep:
+  id: sleeper
+  run_duration: 3min        # safety net: never stays up longer than this by accident
+  sleep_duration: 15min     # only used if the dashboard can't be reached
+  esp32_ext1_wakeup:
+    mode: ANY_LOW
+    pins:
+      - pin:
+          number: GPIO3
+          allow_other_uses: true
+        on_wake:
+          - globals.set:
+              id: act
+              value: '"refresh"'
+      - pin:
+          number: GPIO4
+          allow_other_uses: true
+        on_wake:
+          - globals.set:
+              id: act
+              value: '"next"'
+      - pin:
+          number: GPIO5
+          allow_other_uses: true
+        on_wake:
+          - globals.set:
+              id: act
+              value: '"prev"'
+
+output:
+  - platform: gpio
+    id: battery_enable
+    pin: GPIO21
+  - platform: gpio
+    id: led
+    pin:
+      number: GPIO6
+      inverted: true
+
+sensor:
+  - platform: adc
+    id: battery_voltage
+    pin: GPIO1
+    attenuation: 12db
+    samples: 16
+    update_interval: never
+    accuracy_decimals: 2
+    filters:
+      - multiply: 2.0
+
+binary_sensor:
+  - platform: gpio
+    id: green_button
+    pin:
+      number: GPIO3
+      mode: INPUT_PULLUP
+      inverted: true
+      allow_other_uses: true
+    filters:
+      - delayed_on: 30ms
+    on_press:
+      - script.execute:
+          id: press
+          what: "refresh"
+  - platform: gpio
+    id: right_button
+    pin:
+      number: GPIO4
+      mode: INPUT_PULLUP
+      inverted: true
+      allow_other_uses: true
+    filters:
+      - delayed_on: 30ms
+    on_press:
+      - script.execute:
+          id: press
+          what: "next"
+  - platform: gpio
+    id: left_button
+    pin:
+      number: GPIO5
+      mode: INPUT_PULLUP
+      inverted: true
+      allow_other_uses: true
+    filters:
+      - delayed_on: 30ms
+    on_press:
+      - script.execute:
+          id: press
+          what: "prev"
+
+image:
+  - platform: online_image
+    id: page
+    url: ${dashboard}/kitchen.png
+    format: PNG
+    type: BINARY
+    update_interval: never
+    on_download_finished:
+      - lambda: "id(img) = cached ? 2 : 1;"
+    on_error:
+      - lambda: "id(img) = 3;"
+
+display:
+  - platform: epaper_spi
+    id: epd
+    model: Seeed-reTerminal-E1001
+    update_interval: never
+    full_update_every: ${quick_refreshes}
+    lambda: |-
+      it.image(0, 0, id(page));
+
+script:
+  # Once per wake-up: get on Wi-Fi, show the page, then sleep (or stay up a bit after a press)
+  - id: wake_up
+    then:
+      - if:
+          condition:
+            lambda: 'return id(act) != "timer";'
+          then:
+            - output.turn_on: led
+      - wait_until:
+          condition:
+            wifi.connected:
+          timeout: 20s
+      - if:
+          condition:
+            not:
+              wifi.connected:
+          then:
+            - logger.log:
+                level: WARN
+                format: "No Wi-Fi: trying again in 15 minutes"
+            - output.turn_off: led
+            - deep_sleep.enter:
+                id: sleeper
+                sleep_duration: 15min
+      - script.execute:
+          id: show
+          what: !lambda "return id(act);"
+      - script.wait: show
+      - output.turn_off: led
+      - script.execute:
+          id: nap
+          wait_s: !lambda |-
+            if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED)
+              return 120;   // just powered on or updated: time for Home Assistant to find it
+            return (id(act) == "timer" && !id(pressed)) ? 0 : 30;
+
+  # Ask the dashboard what to do (applies the button) and how long to sleep
+  - id: ask
+    mode: queued
+    max_runs: 3
+    parameters:
+      what: string
+    then:
+      - globals.set:
+          id: plan_ok
+          value: "false"
+      - http_request.get:
+          url: !lambda |-
+            char bat[16];
+            snprintf(bat, sizeof(bat), "%.2f", id(battery_voltage).state);
+            return std::string("${dashboard}/kitchen/plan?act=") + what + "&bat=" + bat;
+          capture_response: true
+          on_response:
+            then:
+              - lambda: |-
+                  int s = 0, f = 0, k = 0;
+                  if (response->status_code == 200 && sscanf(body.c_str(), "%d %d %d", &s, &f, &k) == 3 && s > 0) {
+                    id(sleep_s) = s;
+                    id(full) = f != 0;
+                    id(stay) = k != 0;
+                    id(plan_ms) = millis();
+                    id(plan_ok) = true;
+                  } else {
+                    ESP_LOGW("kitchen", "Unexpected answer from the dashboard (HTTP %d)", response->status_code);
+                  }
+          on_error:
+            then:
+              - logger.log:
+                  level: WARN
+                  format: "Couldn't reach the dashboard"
+
+  # Ask, then download the page and draw it (if it changed)
+  - id: show
+    mode: queued
+    max_runs: 5
+    parameters:
+      what: string
+    then:
+      - script.execute:
+          id: ask
+          what: !lambda "return what;"
+      - script.wait: ask
+      - if:
+          condition:
+            lambda: "return id(plan_ok);"
+          then:
+            # 1 = plain full refresh (clears ghosting); more = quick refreshes in between
+            - lambda: "id(epd).set_full_update_every(id(full) ? 1 : ${quick_refreshes});"
+            - globals.set:
+                id: img
+                value: "0"
+            - online_image.set_url:
+                id: page
+                url: !lambda 'return std::string("${dashboard}/kitchen.png?act=") + what;'
+            - wait_until:
+                condition:
+                  lambda: "return id(img) != 0;"
+                timeout: 25s
+            - if:
+                condition:
+                  lambda: "return id(img) == 1;"
+                then:
+                  - wait_until:
+                      condition:
+                        not:
+                          epaper_spi.is_updating: epd
+                      timeout: 20s
+                  - component.update: epd
+                  - wait_until:
+                      condition:
+                        not:
+                          epaper_spi.is_updating: epd
+                      timeout: 20s
+
+  # A button while awake: show, then stay up another 30 s for more presses
+  - id: press
+    mode: queued
+    max_runs: 3
+    parameters:
+      what: string
+    then:
+      - if:
+          condition:
+            lambda: "return millis() < 1500;"
+          then:
+            - logger.log: "Ignoring the press that woke it up (already handled)"
+          else:
+            - globals.set:
+                id: pressed
+                value: "true"
+            - script.stop: nap
+            - output.turn_on: led
+            - script.execute:
+                id: show
+                what: !lambda "return what;"
+            - script.wait: show
+            - output.turn_off: led
+            - script.execute:
+                id: nap
+                wait_s: 30
+
+  # Sleep until the next round time (after an optional wait), unless the stay-awake switch is on
+  - id: nap
+    mode: restart
+    parameters:
+      wait_s: int
+    then:
+      - delay: !lambda "return wait_s * 1000;"
+      - if:
+          condition:
+            and:
+              - not:
+                  script.is_running: show
+              - not:
+                  script.is_running: press
+          then:
+            - if:
+                condition:
+                  lambda: "return id(stay);"
+                then:
+                  - logger.log: "Stay-awake switch is on: staying up for updates"
+                  - deep_sleep.prevent: sleeper
+                else:
+                  - deep_sleep.allow: sleeper
+                  - deep_sleep.enter:
+                      id: sleeper
+                      sleep_duration: !lambda |-
+                        // the dashboard's answer counted from when it was given
+                        int32_t left = id(sleep_s) * 1000 - (int32_t) (millis() - id(plan_ms));
+                        return (uint32_t) std::max<int32_t>(left, 30000);
+
+interval:
+  # While the stay-awake switch is on, check every minute whether it's been turned off
+  - interval: 60s
+    then:
+      - if:
+          condition:
+            and:
+              - lambda: "return id(stay);"
+              - not:
+                  script.is_running: show
+          then:
+            - script.execute:
+                id: ask
+                what: "poll"
+            - script.wait: ask
+            - if:
+                condition:
+                  lambda: "return !id(stay);"
+                then:
+                  - logger.log: "Stay-awake switch is off: going back to sleep"
+                  - script.execute:
+                      id: nap
+                      wait_s: 0
