@@ -1,5 +1,5 @@
 name: E-paper Dashboard
-version: "0.7.0"
+version: "0.7.1"
 slug: epaper_dashboard
 description: Draws the office e-paper dashboard and serves it to the ESP32 display
 url: https://github.com/arqfernandolima-rgb/ha-epaper-dashboard
