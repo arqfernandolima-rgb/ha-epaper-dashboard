@@ -12,7 +12,8 @@
 #            GET /kitchen.png?act=...               ->  the page (1-bit PNG), or 304 if unchanged
 #
 # Setup: create a new ESP32-S3 device in the ESPHome Device Builder, keep the api
-# encryption key and ota password it generated, and replace everything else with this file.
+# encryption key and the ota password line it generated (newer builders write that one
+# as "!secret <name>_ota_password"; keep it as is), and replace everything else with this file.
 
 substitutions:
   name: kitchen-display
@@ -67,7 +68,7 @@ api:
 
 ota:
   - platform: esphome
-    password: "PASTE-THE-PASSWORD-THE-WIZARD-MADE"
+    password: "PASTE-THE-PASSWORD-THE-WIZARD-MADE"   # or the wizard's !secret line
 
 wifi:
   ssid: !secret wifi_ssid
