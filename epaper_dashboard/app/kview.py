@@ -553,7 +553,10 @@ def footer(app, data, now):
         mins = int((now - since).total_seconds() // 60)
         dur = f"{mins} min" if mins < 90 else f"{mins // 60} h"
         more = f" +{len(open_doors) - 1}" if len(open_doors) > 1 else ""
-        items.append({"icon": "warehouse", "text": f"{name} open {dur}{more}", "alert": True})
+        door = name if re.search(r"\b(door|gate)$", name, re.I) else f"{name} door"
+        # black only once it's been open a while (someone may just be out there)
+        late = mins >= int(opts.get("garage_alert_minutes", 10))
+        items.append({"icon": "warehouse", "text": f"{door} open {dur}{more}", "alert": late})
     elif disc.get("garages"):
         items.append({"icon": "warehouse", "text": "All closed", "alert": False})
     # rooms too hot or cold
@@ -572,7 +575,8 @@ def footer(app, data, now):
     # packages waiting (gone once someone picks them up)
     pk = view._safe("packages", view.build_packages, states, disc, data.get("deliveries"), now)
     if pk and "picked up" not in pk:
-        items.append({"icon": "package-check", "text": pk.replace("Package delivered", "Delivered"), "alert": False})
+        pk = re.sub(r"^(\d+) packages delivered · last ", r"\1 delivered · ", pk).replace("Package delivered", "Delivered")
+        items.append({"icon": "package-check", "text": pk, "alert": False})
     alerts = [x for x in items if x["alert"]]
     calm = [x for x in items if not x["alert"]]
     return (alerts + calm)[:3]

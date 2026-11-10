@@ -139,7 +139,7 @@ body{width:800px;height:480px;overflow:hidden;background:#fff;color:#000;
   <div class="ev" style="grid-column:{{ n }}">{% for e in c.events %}<div class="e">{{ badge(e.who) }}<span><b>{{ e.time }}</b> {{ e.text }}</span></div>{% endfor %}
     {% if c.more %}<div class="e more">+{{ c.more }} more</div>{% endif %}</div>
   {% endif %}{% endfor %}
-  <div class="bars">{% for b in k.bars %}<div class="bar{{ ' one' if b.span == 1 }}" style="grid-column:{{ b.start }} / span {{ b.span }};grid-row:{{ b.row }}">{{ badge(b.who) }}<span class="bt">{{ b.text }}</span>{% if b.span > 1 or b.more %}{{ icon('chevron-right' if b.more else 'plane', 18, 2.5) }}{% endif %}</div>{% endfor %}</div>
+  <div class="bars">{% for b in k.bars %}<div class="bar{{ ' one' if b.span == 1 }}" style="grid-column:{{ b.start }} / span {{ b.span }};grid-row:{{ b.row }}">{{ badge(b.who) }}<span class="bt">{{ b.text }}</span>{% if b.span > 1 %}{{ icon('chevron-right' if b.more else 'plane', 18, 2.5) }}{% endif %}</div>{% endfor %}</div>
 </div>
 <div class="ft">
   {% for x in k.foot %}<div class="{{ 'alert' if x.alert }}">{{ icon(x.icon, 24, 2.25) }}{{ x.text }}</div>{% endfor %}

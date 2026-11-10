@@ -12,7 +12,7 @@ import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
 
-VERSION = "0.9.1"
+VERSION = "0.9.2"
 UA = f"epaper-dashboard/{VERSION} (+https://github.com/arqfernandolima-rgb/ha-epaper-dashboard)"
 
 

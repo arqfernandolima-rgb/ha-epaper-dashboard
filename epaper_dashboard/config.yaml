@@ -1,5 +1,5 @@
 name: E-paper Dashboard
-version: "0.9.1"
+version: "0.9.2"
 slug: epaper_dashboard
 description: Draws the office e-paper dashboard and the kitchen display pages, and serves them to the displays
 url: https://github.com/arqfernandolima-rgb/ha-epaper-dashboard
