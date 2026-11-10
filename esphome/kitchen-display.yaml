@@ -37,12 +37,8 @@ esphome:
               rtc_gpio_pullup_en(pin);
               rtc_gpio_pulldown_dis(pin);
             }
-        # Battery: the voltage divider is only powered while it's read (before Wi-Fi starts drawing)
-        - lambda: |-
-            id(battery_enable).turn_on();
-            delay(10);
-            id(battery_voltage).update();
-            id(battery_enable).turn_off();
+        # Battery: power the voltage divider now; it's read once Wi-Fi is up (it needs time to settle)
+        - output.turn_on: battery_enable
     - priority: -100
       then:
         - script.execute: wake_up
@@ -250,6 +246,13 @@ script:
             - deep_sleep.enter:
                 id: sleeper
                 sleep_duration: 15min
+      # Battery (the divider has had a second or two to settle), then power the divider off
+      - component.update: battery_voltage
+      - output.turn_off: battery_enable
+      - logger.log:
+          level: INFO
+          format: "Battery %.2f V"
+          args: ["id(battery_voltage).state"]
       - script.execute:
           id: show
           what: !lambda "return id(act);"
