@@ -244,8 +244,13 @@ def ingress_handler(app):
                 return self.send(200, f, "application/octet-stream",
                                  {"Content-Disposition": 'attachment; filename="frame.epd"'})
             if r == "/kitchen.png":
+                q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
                 try:
-                    _, png = app.kitchen.image(None, app.now(), device=False)
+                    page = int((q.get("page") or ["0"])[0])
+                except ValueError:
+                    page = 0
+                try:
+                    _, png = app.kitchen.image(None, app.now(), device=False, page=page)
                 except Exception as e:
                     return self.send(503, f"couldn't draw: {e}\n".encode())
                 return self.send(200, png, "image/png", {"Cache-Control": "no-store"})

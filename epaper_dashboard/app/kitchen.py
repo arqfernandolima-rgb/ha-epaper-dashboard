@@ -207,9 +207,10 @@ class Kitchen:
         return st["page"]
 
     # -- GET /kitchen.png
-    def image(self, act, now, device=True):
-        """(status, png bytes or None). device=False for the status page preview (records nothing)."""
-        page = self.st["page"]
+    def image(self, act, now, device=True, page=None):
+        """(status, png bytes or None). device=False for the status page preview (records nothing,
+        any page)."""
+        page = self.st["page"] if page is None or device else page % len(PAGES)
         vm, key = self.model(page, now)
         c = self.cache.get(page)
         if device and act == "timer":
