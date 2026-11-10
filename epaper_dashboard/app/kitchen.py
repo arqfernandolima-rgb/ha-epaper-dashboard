@@ -8,8 +8,8 @@ It runs ESPHome as a thin client and sleeps between updates. Each time it wakes 
 which applies the button and answers "<sleep seconds> <full refresh 0/1> <stay awake 0/1>",
 then downloads GET /kitchen.png?act=<same> (the page to show, a 1-bit PNG), draws it and
 sleeps again. A timer wake whose page hasn't changed gets 304, so the panel isn't refreshed
-for nothing. Pages for timer wakes are drawn ~30 s ahead, so the display isn't kept awake
-waiting for Chromium.
+for nothing. Pages for timer wakes are drawn ~45 s ahead, so the display isn't kept awake
+waiting for Chromium. What the pages show is built in kview.py.
 """
 import datetime as dt
 import hashlib
@@ -19,11 +19,13 @@ import os
 import threading
 import time
 
+import kview
 import render
 
 log = logging.getLogger("dash")
 SIZE = (800, 480)
-PAGES = ("setup", "type")              # setup-check pages until the real layouts are in
+PAGES = ("week", "house")
+BACK_TO_WEEK = 10 * 60                 # a timer wake after this long goes back to page 1
 ACTS = ("timer", "refresh", "next", "prev", "poll")
 WOKE = {"timer": "its timer", "refresh": "the green button", "next": "the right button",
         "prev": "the left button", "poll": "a stay-awake check"}
@@ -55,9 +57,9 @@ class Kitchen:
     def __init__(self, app, data_dir, workdir):
         self.app, self.path, self.workdir = app, os.path.join(data_dir, "kitchen.json"), workdir
         self.lock = threading.Lock()
-        self.st = {"page": 0, "bat": None, "seen": None, "ip": None, "act": None, "wakes": 0,
+        self.st = {"page": 0, "bat": None, "seen": None, "ip": None, "act": None, "wakes": 0, "pressed": 0,
                    "next": None, "sent": None, "sent_at": 0, "cleaned": None, "result": None}
-        self.cache = {}                    # page -> {"for": wake ts or None, "png", "hash", "at"}
+        self.cache = {}                    # page -> {"for": wake ts or None, "key", "png", "at"}
         try:
             with open(self.path) as f:
                 self.st.update(json.load(f))
@@ -75,6 +77,16 @@ class Kitchen:
     def every(self):
         return max(5, min(60, int(self.app.opts.get("kitchen_refresh_minutes", 15))))
 
+    def quiet_hours(self):
+        o = self.app.opts
+        return int(o.get("kitchen_quiet_start", 22)), int(o.get("kitchen_quiet_end", 6))
+
+    def quiet(self, t):
+        a, b = self.quiet_hours()
+        if a == b:
+            return False
+        return a <= t.hour < b if a < b else (t.hour >= a or t.hour < b)
+
     # -- when to wake up next
     def next_wake(self, now):
         """The next round time (every N minutes from midnight), skipping one that's only a few minutes away
@@ -84,8 +96,8 @@ class Kitchen:
         mins = t.hour * 60 + t.minute + (1 if t.second or t.microsecond else 0)
         mins = -(-mins // self.every()) * self.every()
         nxt = t.replace(hour=0, minute=0, second=0, microsecond=0) + dt.timedelta(minutes=mins)   # wall clock
-        if self.app.quiet(nxt):
-            end = int(self.app.opts.get("quiet_hours_end", 6))
+        if self.quiet(nxt):
+            end = self.quiet_hours()[1]
             wake = nxt.replace(hour=end, minute=0)
             if wake <= nxt:
                 wake += dt.timedelta(days=1)
@@ -116,6 +128,10 @@ class Kitchen:
                 st["page"] = (st["page"] + 1) % len(PAGES)
             elif act == "prev":
                 st["page"] = (st["page"] - 1) % len(PAGES)
+            if act in ("next", "prev", "refresh"):
+                st["pressed"] = now.timestamp()
+            elif act == "timer" and st["page"] and now.timestamp() - (st.get("pressed") or 0) >= BACK_TO_WEEK:
+                st["page"] = 0                       # someone left it on the house page
             today = now.date().isoformat()
             full = act == "refresh" or (act == "timer" and st.get("cleaned") != today)
             if full:
@@ -145,65 +161,76 @@ class Kitchen:
             log.debug("couldn't publish the kitchen battery: %s", e)
 
     # -- the page
-    def context(self, page, when, act):
-        st = self.st
-        nxt = self.next_wake(when)                      # what the plan at `when` answers
-        quiet_next = nxt.timestamp() - when.timestamp() > (self.every() + 1) * 60
-        v = st.get("bat")
-        return {
-            "page": PAGES[page], "n": page + 1, "of": len(PAGES), "drawn": t12(when),
-            "next": t12(nxt) + (" (after quiet hours)" if quiet_next else ""), "every": self.every(),
-            "woke": WOKE.get(act or "timer", act), "bat_v": f"{v:.2f} V" if v else None,
-            "bat": battery_pct(v), "wakes": st.get("wakes") or 0,
-        }
+    def model(self, page, when):
+        """What a page shows at `when`, and a key for it (without the "Updated" time)."""
+        build = kview.build_week if PAGES[page] == "week" else kview.build_house
+        vm = build(self.app, when)
+        key = hashlib.sha1(json.dumps(vm, sort_keys=True, default=str).encode()).hexdigest()[:16]
+        return vm, key
 
-    def draw(self, page, when, act):
+    def draw(self, page, vm, when):
         """Render one page. Caller holds the app's render_lock."""
-        html = render._env.get_template("kitchen.html").render(
-            k=self.context(page, when, act), static="file://" + render.STATIC, icon=render.icon)
+        k = dict(vm, n=page + 1, of=len(PAGES), updated=f"Updated {t12(when)}")
+        html = render._env.get_template("kitchen.html").render(k=k, static="file://" + render.STATIC, icon=render.icon)
         png = render.mono_png(render.screenshot(html, self.workdir, SIZE, "kitchen"))
-        return {"png": png, "hash": hashlib.sha1(png).hexdigest()[:16], "at": time.time()}
+        return {"png": png, "at": time.time()}
 
     def prepare(self, now):
-        """Called from the main loop: draw the page for the coming timer wake ahead of time."""
+        """Called from the main loop: draw the page for the coming timer wake ahead of time
+        (unless nothing changed, in which case the wake gets 304 and nothing needs drawing)."""
         nxt = self.st.get("next")
         if not nxt or not 0 < nxt - now.timestamp() <= PREP:
             return
-        page = self.st["page"]
+        page = self._page_at_wake(nxt)
         c = self.cache.get(page)
         if c and c.get("for") == nxt:
             return
         when = dt.datetime.fromtimestamp(nxt, now.tzinfo)
-        with self.app.render_lock:
-            try:
-                out = self.draw(page, when, "timer")
-            except Exception as e:
-                log.warning("kitchen page: %s", e)
+        try:
+            vm, key = self.model(page, when)
+            if key == self.st.get("sent"):
+                return                               # nothing new: the wake gets 304
+            if c and c.get("key") == key:
+                c["for"] = nxt
                 return
-        self.cache[page] = dict(out, **{"for": nxt})
+            with self.app.render_lock:
+                out = self.draw(page, vm, when)
+        except Exception as e:
+            log.warning("kitchen page: %s", e)
+            return
+        self.cache[page] = dict(out, **{"for": nxt, "key": key})
+
+    def _page_at_wake(self, ts):
+        st = self.st
+        if st["page"] and ts - (st.get("pressed") or 0) >= BACK_TO_WEEK:
+            return 0
+        return st["page"]
 
     # -- GET /kitchen.png
     def image(self, act, now, device=True):
         """(status, png bytes or None). device=False for the status page preview (records nothing)."""
         page = self.st["page"]
+        vm, key = self.model(page, now)
         c = self.cache.get(page)
-        fresh = c and (
-            (act == "timer" and c.get("for") and abs(c["for"] - now.timestamp()) < 120)
-            or (not device and time.time() - c["at"] < 600))
-        if not fresh:
+        if device and act == "timer":
+            with self.lock:
+                st = self.st
+                if st.get("sent") == key and time.time() - st.get("sent_at", 0) < RESEND:
+                    st["result"] = "unchanged (304)"
+                    self._save()
+                    return 304, None
+        if not (c and c.get("key") == key and (device or time.time() - c["at"] < 600)):
             with self.app.render_lock:
-                out = self.draw(page, now, act if device else self.st.get("act"))
-            c = self.cache[page] = dict(out, **{"for": None})
+                out = self.draw(page, vm, now)
+            c = self.cache[page] = dict(out, **{"for": None, "key": key})
         if not device:
             return 200, c["png"]
         with self.lock:
             st = self.st
-            same = act == "timer" and st.get("sent") == c["hash"] and time.time() - st.get("sent_at", 0) < RESEND
-            st["result"] = "unchanged (304)" if same else "new page"
-            if not same:
-                st["sent"], st["sent_at"] = c["hash"], time.time()
+            st["result"] = "new page"
+            st["sent"], st["sent_at"] = key, time.time()
             self._save()
-        return (304, None) if same else (200, c["png"])
+        return 200, c["png"]
 
     def wait_hint(self, now):
         """When the main loop should wake to prepare the next page (or None)."""
@@ -222,7 +249,8 @@ class Kitchen:
         v = st.get("bat")
         return {
             "seen": when(st.get("seen")), "ip": st.get("ip"), "woke": WOKE.get(st.get("act"), st.get("act")),
-            "page": f"{st['page'] + 1} of {len(PAGES)}", "next": when(st.get("next")),
+            "page": f"{st['page'] + 1} of {len(PAGES)} ({'the week' if st['page'] == 0 else 'the house'})",
+            "next": when(st.get("next")),
             "battery": f"{battery_pct(v)}% ({v:.2f} V)" if v else None, "result": st.get("result"),
             "every": self.every(), "wakes": st.get("wakes") or 0,
             "stay": (self.app.opts.get("kitchen_stay_awake") or STAY_DEFAULT),

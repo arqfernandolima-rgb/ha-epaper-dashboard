@@ -1,5 +1,5 @@
 name: E-paper Dashboard
-version: "0.8.0"
+version: "0.9.0"
 slug: epaper_dashboard
 description: Draws the office e-paper dashboard and the kitchen display pages, and serves them to the displays
 url: https://github.com/arqfernandolima-rgb/ha-epaper-dashboard
@@ -36,6 +36,8 @@ options:
   garage_alert_minutes: 10
   hide_idle_hours: 3
   kitchen_refresh_minutes: 15
+  kitchen_quiet_start: 22
+  kitchen_quiet_end: 6
   alerts: []
 schema:
   stocks:
@@ -55,6 +57,8 @@ schema:
   garage_alert_minutes: int(0,240)
   hide_idle_hours: int(1,48)
   kitchen_refresh_minutes: int(5,60)
+  kitchen_quiet_start: int(0,23)
+  kitchen_quiet_end: int(0,23)
   alerts:
     - entity: str
       state: str
@@ -76,3 +80,5 @@ schema:
   sleep: str?
   resting_heart_rate: str?
   kitchen_stay_awake: str?
+  kitchen_people: str?
+  kitchen_shopping_list: str?

@@ -38,6 +38,12 @@ configuration:
   kitchen_refresh_minutes:
     name: Kitchen display refresh (minutes)
     description: How often the battery kitchen display (reTerminal E1001) wakes up on its own, on round times. Fewer wake-ups means longer battery life. It sleeps through quiet hours; its buttons always wake it.
+  kitchen_quiet_start:
+    name: Kitchen display sleeps from (hour)
+    description: The kitchen display stops its own updates at this hour (default 22 = 10 PM). Its buttons still wake it.
+  kitchen_quiet_end:
+    name: Kitchen display wakes at (hour)
+    description: First update of the morning (default 6 AM). It's a full, clean refresh.
   alerts:
     name: Alerts
     description: Red banners at the bottom of the Today column. Each one shows its text while the entity is in that state (e.g. cover.garage_door / open / Garage door open).
@@ -89,6 +95,12 @@ configuration:
   resting_heart_rate:
     name: Resting heart rate entity (optional)
     description: Resting heart rate sensor.
+  kitchen_people:
+    name: Kitchen display people (optional)
+    description: "Who's who in your calendar events, as initial=names. The first person owns the calendars (their all-day events show as away). Example: F=Fernando; M=Mi,Milena; T=Tom; E=Mimi,Emilia"
+  kitchen_shopping_list:
+    name: Kitchen display shopping list (optional)
+    description: The to-do list the house page shows. Default todo.shopping_list.
   kitchen_stay_awake:
     name: Kitchen display stay-awake switch (optional)
     description: A toggle helper that keeps the kitchen display awake (for firmware updates) while it's on. Default input_boolean.kitchen_display_stay_awake.

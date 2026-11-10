@@ -117,6 +117,7 @@ class App:
             "portfolio": Source("Portfolio", sources.portfolio, 7200, retry=600,
                                 hint="not set up (add your SnapTrade keys in Configuration)"),
             "markets": Source("Markets", sources.markets, self._markets_every, retry=300),
+            "shopping": Source("Shopping list (kitchen)", sources.shopping, 300, retry=900, stale_after=6 * 3600),
             "deliveries": Source("Packages (Nest alerts)", sources.deliveries, 120, stale_after=6 * 3600,
                                  hint="not set up (turn on the companion app's Last notification sensor)"),
         }
@@ -324,7 +325,7 @@ class App:
                 self.discovered_at = time.time()
             except Exception as e:
                 log.warning("discovery: %s", e)
-        for key in ("calendar", "weather", "portfolio", "markets", "deliveries"):
+        for key in ("calendar", "weather", "portfolio", "markets", "deliveries", "shopping"):
             s = self.sources[key]
             if key == "markets":
                 ctx.holdings = self.sources["portfolio"].data      # priced live along with the stocks

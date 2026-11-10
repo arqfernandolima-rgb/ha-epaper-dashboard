@@ -405,7 +405,16 @@ CHARGE_PROBLEM = {"charging_vehicle_error", "charging_station_error"}
 
 
 def build_vehicle(states, v, now):
-    """One car: state of charge (bar with the charge-limit mark), range, and charging status."""
+    """One car: state of charge (bar with the charge-limit mark), range, and charging status.
+    Only when it's worth a glance: low, charging, or plugged in waiting to charge (not when full)."""
+    info = vehicle_info(states, v, now)
+    if not info or not info["show"]:
+        return None
+    return {k: info[k] for k in ("name", "soc", "tick", "line", "lvl", "charging")}
+
+
+def vehicle_info(states, v, now):
+    """Everything about one car, whether or not it needs attention (the kitchen's house page shows it always)."""
     st = _state(states, v.get("soc"))
     soc = num((st or {}).get("state"))
     if soc is None:
@@ -440,13 +449,12 @@ def build_vehicle(states, v, now):
         status = "Charged"
     elif plugged:
         status = "Plugged in"
-    # only worth a glance when it's low, charging, or plugged in waiting to charge (not when full)
     waiting = plugged and charger != "charging_complete"
-    if not (soc < CAR_LOW or charger in CHARGING or charger in CHARGE_PROBLEM or waiting):
-        return None
     return {"name": v.get("label") or v.get("name") or "Car", "soc": soc,
             "tick": limit if limit and 0 < limit < 100 else None,
-            "line": " · ".join(x for x in (rng, status) if x), "lvl": lvl, "charging": charger in CHARGING}
+            "line": " · ".join(x for x in (rng, status) if x), "lvl": lvl, "charging": charger in CHARGING,
+            "show": soc < CAR_LOW or charger in CHARGING or charger in CHARGE_PROBLEM or waiting,
+            "range": rng, "status": status, "plugged": plugged, "attention": lvl == "poor"}
 
 
 def idle_hours(opts):

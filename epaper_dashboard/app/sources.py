@@ -12,7 +12,7 @@ import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
 
-VERSION = "0.8.0"
+VERSION = "0.9.0"
 UA = f"epaper-dashboard/{VERSION} (+https://github.com/arqfernandolima-rgb/ha-epaper-dashboard)"
 
 
@@ -49,9 +49,9 @@ def weather(ctx, prev=None):
     base = {"latitude": round(ctx.lat, 4), "longitude": round(ctx.lon, 4), "timezone": ctx.tz_name}
     p = dict(base,
              current="temperature_2m,weather_code,is_day,wind_speed_10m,wind_gusts_10m",
-             hourly="temperature_2m,precipitation_probability,weather_code,uv_index,is_day",
+             hourly="temperature_2m,apparent_temperature,precipitation_probability,weather_code,uv_index,is_day",
              daily="weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max",
-             forecast_days=3)
+             forecast_days=8)                       # the kitchen display shows the week
     if ctx.imperial:
         p.update(temperature_unit="fahrenheit", wind_speed_unit="mph")
     errors, source = [], "Open-Meteo"
@@ -105,6 +105,7 @@ def _ha_weather(ctx):
     hours = [(local(f["datetime"]), f) for f in fc["hourly"]]
     hourly = {"time": [t.strftime("%Y-%m-%dT%H:%M") for t, _ in hours],
               "temperature_2m": [f.get("temperature") for _, f in hours],
+              "apparent_temperature": [f.get("apparent_temperature", f.get("temperature")) for _, f in hours],
               "precipitation_probability": [f.get("precipitation_probability") or 0 for _, f in hours],
               "weather_code": [HA_WMO.get(f.get("condition"), 3) for _, f in hours],
               "uv_index": [f.get("uv_index") or 0 for _, f in hours],
@@ -112,7 +113,7 @@ def _ha_weather(ctx):
     by_day = {local(f["datetime"]).date(): f for f in fc["daily"]}
     daily = {"time": [], "weather_code": [], "temperature_2m_max": [], "temperature_2m_min": [],
              "precipitation_probability_max": [], "uv_index_max": []}
-    for k in range(3):
+    for k in range(8):
         d = now.date() + dt.timedelta(days=k)
         f = by_day.get(d)
         temps = [x.get("temperature") for t, x in hours if t.date() == d and x.get("temperature") is not None]
@@ -363,7 +364,7 @@ def calendar(ctx, prev=None):
     if not cals:
         return {"calendars": [], "events": []}
     now = ctx.clock()
-    start, end = now - dt.timedelta(hours=12), now + dt.timedelta(days=4)
+    start, end = now - dt.timedelta(hours=12), now + dt.timedelta(days=8)    # the kitchen shows the week
     events, errors, seen = [], [], set()
     for c in cals:
         try:
@@ -382,11 +383,26 @@ def calendar(ctx, prev=None):
                 continue
             seen.add(key)
             events.append({"start": st.isoformat(), "end": en.isoformat(), "all_day": all_day,
-                           "title": title, "location": (e.get("location") or "").strip(), "calendar": c})
+                           "title": title, "location": (e.get("location") or "").strip(), "calendar": c,
+                           "recurring": bool(e.get("rrule") or e.get("recurrence_id"))})
     if errors and len(errors) == len(cals):
         raise RuntimeError("; ".join(errors))
     events.sort(key=lambda e: e["start"])
     return {"calendars": cals, "events": events, "errors": errors}
+
+
+def shopping(ctx, prev=None):
+    """What's left on a Home Assistant to-do list (the kitchen display's house page)."""
+    eid = (ctx.opts.get("kitchen_shopping_list") or "todo.shopping_list").strip()
+    try:
+        items = ctx.ha.service_response("todo", "get_items", {"entity_id": eid, "status": "needs_action"})[eid]["items"]
+        names = [i.get("summary") for i in items if i.get("summary")]
+    except Exception:
+        try:
+            names = [i["name"] for i in ctx.ha.get("/api/shopping_list") if not i.get("complete")]
+        except Exception as e:
+            raise RuntimeError(f"no to-do list {eid}: {e}") from None
+    return {"entity": eid, "items": names}
 
 
 # ---------------------------------------------------------------- HA entities

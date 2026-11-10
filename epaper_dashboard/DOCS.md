@@ -43,7 +43,18 @@ The Nest integration doesn't pass package events to Home Assistant, but your pho
 
 A second, battery-powered display: Seeed's reTerminal E1001 (7.5" black and white, 800x480) running ESPHome as a thin client. The app draws its pages (same fonts and look as the office panel); the display only downloads and shows them, then deep-sleeps.
 
-- It wakes on its own every **Kitchen display refresh** minutes (default 15), on round times, and sleeps through quiet hours. Any button wakes it right away.
+**Page 1, the week.** Today's date, the weather now and every 3 hours, and one line of advice (what to wear, an umbrella, the trash going out tonight). Below, four rolling days plus the weekend (Saturday and Sunday stacked in one column, always on screen; on Mondays it takes Friday's place). Each day shows its weather, trash and recycling, birthdays, holidays, and family events with a badge for who they're for; all-day events (trips) are bars across the days someone is away. After 6 PM the page is about tomorrow. The bottom row only shows exceptions: a garage door left open, a package waiting, a room too hot or cold, the car low.
+
+What comes from the calendars:
+- **Trash and recycling** from calendars named trash/recycling (or all-day events saying so).
+- **Birthdays** and **holidays** from those calendars, as small tags.
+- **Trips**: all-day events that aren't birthdays, holidays or bins. The person is whoever's name is in the title (**Kitchen display people**), otherwise the first person (the calendars' owner). Weekly all-day events (like the cleaner) are tags, not trips.
+- **Family events**: timed events whose title has a family member's name (other than the owner's) or a family word (school, bus, practice, game, recital, dentist, birthday party, field trip, buscar, levar…). Work meetings stay off. Weekly routine events show on today and tomorrow only.
+- Canceled events are skipped.
+
+**Page 2, the house.** Rooms (temperature, humidity, CO2, VOC), lights that are on, garage doors, the car, and a to-do list (**Kitchen display shopping list**, default `todo.shopping_list`). This page is still being designed.
+
+- It wakes on its own every **Kitchen display refresh** minutes (default 15), on round times, and sleeps from **Kitchen display sleeps from** (10 PM) to **wakes at** (6 AM). Any button wakes it right away. If someone leaves it on page 2, the next update goes back to page 1.
 - Buttons: **left** previous page, **right** next page, **green** refresh. After a press it stays awake 30 seconds, so more presses flip pages with a quick partial refresh.
 - Each wake: `GET http://<HA>:8090/kitchen/plan?act=<timer|refresh|next|prev>&bat=<volts>` answers `<sleep seconds> <full refresh 0/1> <stay awake 0/1>`, then `GET /kitchen.png?act=...` returns the page as a 1-bit PNG (or 304 on a timer wake when nothing changed, so the panel isn't refreshed for nothing). Pages for timer wakes are drawn ahead of time, so the display isn't kept awake waiting.
 - The first update of each day, and every green-button press, is a full refresh, which clears any ghosting the quick refreshes leave behind.

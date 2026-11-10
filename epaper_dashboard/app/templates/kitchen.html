@@ -9,75 +9,174 @@ html,body{margin:0;padding:0}
 body{width:800px;height:480px;overflow:hidden;background:#fff;color:#000;
   font-family:Barlow,"DejaVu Sans";font-weight:500;font-feature-settings:'tnum' 1;-webkit-font-smoothing:none}
 .ic{display:block;flex:none}
-.wrap{height:480px;padding:20px 24px 0;display:flex;flex-direction:column}
-.lbl{font-size:16px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
-.top{display:flex;justify-content:space-between;align-items:baseline;padding-bottom:10px;border-bottom:3px solid #000}
-.body{flex:1;min-height:0}
-/* page 1: setup check */
-.st{display:grid;grid-template-columns:1fr 1fr;height:100%}
-.st>div{padding:20px 0 0;display:flex;flex-direction:column;gap:22px}
-.st>div+div{border-left:2px solid #000;padding-left:24px}
-.batt{display:flex;align-items:center;gap:22px}
-.cell{width:120px;height:58px;border:5px solid #000;border-radius:6px;position:relative;padding:5px}
-.cell:after{content:"";position:absolute;right:-14px;top:15px;width:9px;height:18px;background:#000;border-radius:0 3px 3px 0}
-.cell i{display:block;height:100%;background:#000;border-radius:1px}
-.big{font-size:72px;font-weight:700;line-height:.9;letter-spacing:-.02em}
-.mid{font-size:30px;font-weight:600;line-height:1.1}
-.sm{font-size:20px;font-weight:500;margin-top:4px}
-/* page 2: type sizes */
-.ty{padding-top:10px;display:flex;flex-direction:column;gap:3px}
-.ty .r{display:flex;align-items:baseline;gap:14px;white-space:nowrap;overflow:hidden}
-.ty .r b{font-size:14px;font-weight:600;width:66px;flex:none;text-align:right}
-.icons{display:flex;align-items:flex-end;gap:18px;margin-top:6px}
-.lines{display:flex;flex-direction:column;gap:5px;margin-left:auto;width:200px}
-.lines i{display:block;background:#000}
-.check{width:70px;height:70px;background:repeating-conic-gradient(#000 0 25%,#fff 0 50%) 0 0/14px 14px;border:2px solid #000}
-/* footer: what the buttons do */
-.keys{display:grid;grid-template-columns:1fr 1fr 1fr;border-top:3px solid #000;height:62px}
-.keys>div{display:flex;align-items:center;justify-content:center;gap:10px;font-size:22px;font-weight:600}
-.keys>div+div{border-left:2px solid #000}
-.keys .g{background:#000;color:#fff}
+.wrap{height:480px;padding:12px 16px 0;display:flex;flex-direction:column}
+.lbl{font-size:15px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+.row{display:flex;align-items:center}
+/* who: a person badge (initial in a black disc) */
+.who{display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:50%;
+  background:#000;color:#fff;font-size:13px;font-weight:700;flex:none;letter-spacing:0}
+.inv .who,.bar .who{background:#fff;color:#000}
+
+/* ---------- week: header ---------- */
+.hd{display:flex;justify-content:space-between;height:112px;padding-bottom:6px}
+.hd .day{font-size:19px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.hd .date{font-size:52px;font-weight:700;line-height:.95;letter-spacing:-.01em}
+.adv{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:20px;font-weight:600}
+.wxh{display:flex;align-items:flex-end;gap:14px}
+.hero{display:flex;flex-direction:column;align-items:flex-start}
+.hero .t{display:flex;align-items:center;gap:6px;font-size:60px;font-weight:700;line-height:.86;letter-spacing:-.03em}
+.hrs{display:flex;border-left:2px solid #000;padding-left:6px;height:90px;align-items:stretch}
+.hr{width:58px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:2px 0}
+.hr .h{font-size:14px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.hr .v{font-size:21px;font-weight:700;line-height:1}
+.hr .r{font-size:13px;font-weight:600;height:15px}
+/* ---------- week: grid ---------- */
+.wk{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.3fr) repeat(4,minmax(0,1fr));
+  grid-template-rows:auto auto auto auto 1fr;border-top:3px solid #000;border-bottom:3px solid #000}
+.col{grid-row:1/-1;border-left:2px solid #000}.col.first{border-left:none}
+.dh{grid-row:1;padding:5px 8px 4px;display:flex;justify-content:space-between;align-items:baseline;font-size:18px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;z-index:1}
+.dh.today{background:#000;color:#fff}
+.wx{grid-row:2;padding:5px 8px 0;display:flex;align-items:center;gap:7px;z-index:1}
+.wx .hl{font-size:23px;font-weight:700;line-height:1;white-space:nowrap}
+.wx .hl span{font-weight:500;font-size:19px}
+.wx .rn{font-size:14px;font-weight:600;display:flex;align-items:center;gap:2px;margin-top:2px}
+.ch{grid-row:3;padding:6px 8px 0;display:flex;flex-direction:column;gap:4px;z-index:1}
+.chip{display:flex;align-items:center;gap:6px;font-size:17px;font-weight:600;line-height:1.1;white-space:nowrap;overflow:hidden}
+.chip>span{overflow:hidden;text-overflow:ellipsis}
+.chip.inv{background:#000;color:#fff;padding:3px 6px;margin:0 -3px;border-radius:4px}
+.bars{grid-row:4;display:grid;grid-template-columns:subgrid;grid-column:1/-1;row-gap:4px;padding:6px 0 0;z-index:1}
+.bar{height:28px;margin:0 6px;background:#000;color:#fff;border-radius:14px;display:flex;align-items:center;gap:7px;padding:0 4px 0 4px;font-size:17px;font-weight:600;white-space:nowrap;overflow:hidden}
+.bar .ic{margin-left:auto;margin-right:6px}
+.bar .bt{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.bar.one{font-size:16px;gap:5px;margin:0 4px}
+.ev{grid-row:5;padding:6px 8px 4px;display:flex;flex-direction:column;gap:4px;z-index:1;overflow:hidden}
+.e{display:flex;gap:6px;align-items:flex-start;font-size:17px;font-weight:600;line-height:1.15}
+.e .who{margin-top:-1px}
+.e b{font-weight:700}
+.e.more{font-weight:500;padding-left:27px}
+.e.done{text-decoration:line-through}
+/* weekend column: two half-days */
+.we{display:flex;flex-direction:column;z-index:1}
+.we .half{padding:5px 8px 4px}
+.we .half+.half{border-top:2px dashed #000}
+.we .hh2{display:flex;justify-content:space-between;align-items:center;font-size:17px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.we .mini{display:flex;align-items:center;gap:4px;font-size:18px;font-weight:700;text-transform:none;letter-spacing:0}
+.we .e{margin-top:5px;font-size:16px}
+.we .chip{margin-top:4px;font-size:16px}
+.we .today{background:#000;color:#fff;margin:-5px -8px 0;padding:5px 8px 4px}
+.we .more{margin-top:4px;font-size:15px;font-weight:500}
+/* ---------- footer ---------- */
+.ft{height:52px;display:flex;align-items:center}
+.ft>div{display:flex;align-items:center;gap:9px;font-size:20px;font-weight:600;padding:0 14px;height:100%;white-space:nowrap}
+.ft>div:first-child{padding-left:2px}
+.ft>div+div{border-left:2px solid #000}
+.ft .alert{background:#000;color:#fff;font-weight:700}
+.ft .note{flex:1;min-width:0;overflow:hidden}
+.ft .upd{margin-left:auto;font-size:14px;font-weight:600;gap:8px;padding-right:0}
+.dots{display:flex;gap:5px}.dots i{width:9px;height:9px;border-radius:50%;border:2px solid #000;display:block}.dots i.on{background:#000}
+
+/* ---------- house ---------- */
+.hhd{display:flex;justify-content:space-between;align-items:flex-end;height:62px;padding-bottom:8px;border-bottom:3px solid #000}
+.hhd .t{font-size:40px;font-weight:700;line-height:1}
+.hhd .o{display:flex;align-items:center;gap:8px;font-size:22px;font-weight:600}
+.grid{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr}
+.card{padding:10px 14px 8px;border-left:2px solid #000;border-top:2px solid #000;display:flex;flex-direction:column;gap:7px;min-height:0;overflow:hidden}
+.card.l{border-left:none}.card.t{border-top:none}
+.card .lbl{display:flex;align-items:center;gap:7px}
+.room .tt{display:flex;align-items:baseline;gap:10px}
+.room .big{font-size:56px;font-weight:700;line-height:.85;letter-spacing:-.02em}
+.room .hu{font-size:22px;font-weight:600}
+.lv{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:17px;font-weight:600}
+.lv b{font-weight:700}
+.tag{display:inline-block;padding:1px 6px;border:2px solid #000;border-radius:4px;font-size:14px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.tag.inv{background:#000;color:#fff}
+.lights .n{font-size:56px;font-weight:700;line-height:.85}
+.lights .rm{display:flex;align-items:center;gap:7px;font-size:18px;font-weight:600;line-height:1.35}
+.doors{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px}
+.door{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:600}
+.door .st{white-space:nowrap;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;display:block}
+.door.open{background:#000;color:#fff;border-radius:5px;padding:2px 4px;margin:-2px -4px}
+.soc{display:flex;align-items:baseline;gap:10px}
+.soc .big{font-size:56px;font-weight:700;line-height:.85;letter-spacing:-.02em}
+.track{height:20px;border:3px solid #000;border-radius:6px;position:relative;padding:2px}
+.track i{display:block;height:100%;background:#000;border-radius:1px}
+.track u{position:absolute;top:-7px;bottom:-7px;width:3px;background:#000}
+.sm{font-size:18px;font-weight:600;line-height:1.25}
+.soon{font-size:17px;font-weight:500;line-height:1.3}
 </style></head><body><div class="wrap">
-<div class="top">
-  <div class="lbl">Kitchen display · {{ 'setup check' if k.page == 'setup' else 'type sizes' }}</div>
-  <div class="lbl">Page {{ k.n }} / {{ k.of }}</div>
-</div>
-<div class="body">
-{% if k.page == 'setup' %}
-  <div class="st">
-    <div>
-      <div class="batt">
-        <div class="cell"><i style="width:{{ k.bat or 0 }}%"></i></div>
-        <div><div class="big">{{ k.bat if k.bat is not none else '–' }}%</div>
-          <div class="sm">{{ k.bat_v or 'no battery reading yet' }}</div></div>
-      </div>
-      <div><div class="lbl">Drawn</div><div class="mid">{{ k.drawn }}</div>
-        <div class="sm">every {{ k.every }} min · wake #{{ k.wakes }}</div></div>
-    </div>
-    <div>
-      <div><div class="lbl">Woke up by</div><div class="mid">{{ k.woke }}</div></div>
-      <div><div class="lbl">Next update</div><div class="mid">{{ k.next }}</div></div>
-      <div class="sm">After a button press it stays awake 30 s:<br>left / right flip pages with a quick partial refresh.</div>
-    </div>
+{% macro badge(who) %}{% if who %}<span class="who">{{ who }}</span>{% endif %}{% endmacro %}
+{% macro dots() %}<span class="dots">{% for i in range(k.of) %}<i{% if i + 1 == k.n %} class="on"{% endif %}></i>{% endfor %}</span>{% endmacro %}
+{% if k.page == 'week' %}
+<div class="hd">
+  <div>
+    <div class="day">{{ k.day }}</div><div class="date">{{ k.date }}</div>
+    {% if k.advice %}<div class="adv">{{ icon(k.advice.icon, 24, 2.25) }}{{ k.advice.text }}</div>{% endif %}
   </div>
+  {% if k.hero %}<div class="wxh">
+    <div class="hero"><div class="lbl">{{ k.hero.label }}</div>
+      <div class="t">{{ icon(k.hero.icon, 52, 2) }}{{ k.hero.temp }}°</div>
+      <div class="lbl" style="letter-spacing:.02em;text-transform:none;font-size:18px;font-weight:600;margin-top:6px">{{ k.hero.text }}</div></div>
+    {% if k.hours %}<div class="hrs">{% for h in k.hours %}<div class="hr"><div class="h">{{ h.t }}</div>{{ icon(h.icon, 28, 2.25) }}<div class="v">{{ h.temp }}°</div><div class="r">{% if h.rain %}{{ h.rain }}%{% endif %}</div></div>{% endfor %}</div>{% endif %}
+  </div>{% endif %}
+</div>
+<div class="wk">
+  {% for c in k.cols %}<div class="col{{ ' first' if loop.first }}" style="grid-column:{{ loop.index }}"></div>{% endfor %}
+  {% for c in k.cols %}{% set n = loop.index %}
+  {% if c.kind == 'we' %}
+  <div class="we" style="grid-column:{{ n }};grid-row:1/-1">
+    {% for d in c.days %}<div class="half">
+      <div class="hh2{{ ' today' if d.today }}"><span>{{ d.label }} {{ d.num }}</span><span class="mini">{% if d.hi is not none %}{{ icon(d.icon, 22, 2.25) }}{{ d.hi }}°{% endif %}{% if d.rain %}<span style="font-size:13px;font-weight:600">&nbsp;{{ d.rain }}%</span>{% endif %}</span></div>
+      {% for x in d.chips %}<div class="chip{{ ' inv' if x.alert }}">{{ icon(x.icon, 17, 2.5) }}{{ badge(x.who) }}{{ x.text }}</div>{% endfor %}
+      {% for e in d.events %}<div class="e">{{ badge(e.who) }}<span><b>{{ e.time }}</b> {{ e.text }}</span></div>{% endfor %}
+      {% if d.more %}<div class="e more">+{{ d.more }} more</div>{% endif %}
+    </div>{% endfor %}
+  </div>
+  {% else %}
+  <div class="dh{{ ' today' if c.today }}" style="grid-column:{{ n }}"><span>{{ c.label }}</span><span>{{ c.num }}</span></div>
+  <div class="wx" style="grid-column:{{ n }}">{% if c.hi is not none %}{{ icon(c.icon, 30, 2.25) }}<div><div class="hl">{{ c.hi }}° <span>{{ c.lo }}°</span></div>
+    {% if c.rain %}<div class="rn">{{ icon('umbrella', 14, 2.5) }}{{ c.rain }}%</div>{% endif %}</div>{% else %}<div style="height:30px"></div>{% endif %}</div>
+  <div class="ch" style="grid-column:{{ n }}">{% for x in c.chips %}<div class="chip{{ ' inv' if x.alert }}">{{ icon(x.icon, 18, 2.5) }}{{ badge(x.who) }}<span>{{ x.text }}</span></div>{% endfor %}</div>
+  <div class="ev" style="grid-column:{{ n }}">{% for e in c.events %}<div class="e">{{ badge(e.who) }}<span><b>{{ e.time }}</b> {{ e.text }}</span></div>{% endfor %}
+    {% if c.more %}<div class="e more">+{{ c.more }} more</div>{% endif %}</div>
+  {% endif %}{% endfor %}
+  <div class="bars">{% for b in k.bars %}<div class="bar{{ ' one' if b.span == 1 }}" style="grid-column:{{ b.start }} / span {{ b.span }};grid-row:{{ b.row }}">{{ badge(b.who) }}<span class="bt">{{ b.text }}</span>{% if b.span > 1 or b.more %}{{ icon('chevron-right' if b.more else 'plane', 18, 2.5) }}{% endif %}</div>{% endfor %}</div>
+</div>
+<div class="ft">
+  {% for x in k.foot %}<div class="{{ 'alert' if x.alert }}">{{ icon(x.icon, 24, 2.25) }}{{ x.text }}</div>{% endfor %}
+  <div class="upd">{{ k.updated }}{{ dots() }}</div>
+</div>
 {% else %}
-  <div class="ty">
-    <div class="r"><b>96 · 700</b><span style="font-size:96px;font-weight:700;line-height:1">72° 2:15</span></div>
-    <div class="r"><b>56 · 700</b><span style="font-size:56px;font-weight:700;line-height:1.05">Kitchen 41%</span></div>
-    <div class="r"><b>36 · 600</b><span style="font-size:36px;font-weight:600">Dentist with Ana · 3:00 PM</span></div>
-    <div class="r"><b>26 · 500</b><span style="font-size:26px;font-weight:500">Partly cloudy, high 61°, low 44°</span></div>
-    <div class="r"><b>20 · 600</b><span style="font-size:20px;font-weight:600">Package delivered 2:14 PM · R1T 68% · 1 h 20 m left</span></div>
-    <div class="icons">
-      {{ icon('cloud-sun', 64, 2) }}{{ icon('umbrella', 48, 2.25) }}{{ icon('package', 36, 2.5) }}{{ icon('zap', 24, 2.5) }}
-      <div class="check"></div>
-      <div class="lines"><i style="height:1px"></i><i style="height:2px"></i><i style="height:3px"></i><i style="height:5px"></i><i style="height:8px"></i></div>
-    </div>
+<div class="hhd"><div class="t">House</div>{% if k.out %}<div class="o">{{ icon(k.out.icon, 26, 2.25) }}Outside {{ k.out.temp }}° · {{ k.out.text }}</div>{% endif %}</div>
+<div class="grid">
+  {% for r in k.rooms %}<div class="card room t{{ ' l' if loop.first }}">
+    <div class="lbl">{{ icon('thermometer', 18, 2.5) }}{{ r.name }}</div>
+    <div class="tt"><div class="big">{{ r.t }}°</div><div class="hu">{{ icon('droplets', 20, 2.5) }}</div><div class="hu" style="margin-left:-6px">{{ r.h }}%</div></div>
+    <div class="lv">{% for q in r.air %}<span>{{ q.k }} <b>{{ q.v }}</b></span>{% endfor %}</div>
+    <div><span class="tag{{ ' inv' if r.alert }}">{{ r.verdict }}</span></div>
+  </div>{% endfor %}
+  {% for i in range(2 - k.rooms|length) %}<div class="card t{{ ' l' if (k.rooms|length + i) == 0 }}"></div>{% endfor %}
+  <div class="card lights t">
+    <div class="lbl">{{ icon('lightbulb', 18, 2.5) }}Lights on</div>
+    <div class="n">{{ k.lights|length }}</div>
+    <div>{% for l in k.lights[:4] %}<div class="rm">{{ l }}</div>{% endfor %}{% if k.lights|length > 4 %}<div class="rm">+{{ k.lights|length - 4 }} more</div>{% endif %}</div>
   </div>
+  <div class="card l">
+    <div class="lbl">{{ icon('warehouse', 18, 2.5) }}Garage doors</div>
+    <div class="doors">{% for g in k.garage %}<div class="door{{ ' open' if g.open }}">{{ icon('door-open' if g.open else 'door-closed', 26, 2.25) }}<div>{{ g.name }}<span class="st">{{ ('open ' ~ g.open) if g.open else 'closed' }}</span></div></div>{% endfor %}</div>
+  </div>
+  <div class="card">{% if k.car %}
+    <div class="lbl">{{ icon('car', 18, 2.5) }}{{ k.car.name }}</div>
+    <div class="soc"><div class="big">{{ k.car.soc }}%</div><div class="sm">{{ k.car.range }}</div></div>
+    <div class="track"><i style="width:{{ k.car.soc }}%"></i>{% if k.car.limit %}<u style="left:{{ k.car.limit }}%"></u>{% endif %}</div>
+    <div class="sm row" style="gap:6px">{{ icon('plug-zap', 18, 2.5) if k.car.charging }}{{ k.car.line }}</div>
+  {% endif %}</div>
+  <div class="card">
+    <div class="lbl">{{ icon('shopping-basket', 18, 2.5) }}Shopping list</div>
+    <div class="soon">{{ k.shopping }}</div>
+  </div>
+</div>
+<div class="ft" style="border-top:3px solid #000;height:46px">
+  <div class="upd">{{ k.updated }}{{ dots() }}</div>
+</div>
 {% endif %}
-</div>
-<div class="keys">
-  <div>{{ icon('chevron-left', 28, 3) }}Left · previous</div>
-  <div class="g">{{ icon('refresh-cw', 24, 3) }}Green · refresh</div>
-  <div>Right · next{{ icon('chevron-right', 28, 3) }}</div>
-</div>
 </div></body></html>
