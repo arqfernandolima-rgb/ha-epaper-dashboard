@@ -582,65 +582,216 @@ def footer(app, data, now):
     return (alerts + calm)[:3]
 
 
-# ---------------------------------------------------------------- page 2
+# ---------------------------------------------------------------- page 2: a snapshot of the house
 PRINTER_LIGHT = re.compile(r"chamber_light|heatbed_light|_printer_", re.I)
+OUTSIDE_AREA = re.compile(r"garage|green ?house|pool ?house|outside|outdoor|yard|patio|porch|deck|barn|shed|garden", re.I)
+NOT_ROOM = re.compile(r"nozzle|bed_|chamber|ams|drying|target|cabin|driver|battery|cpu|printer", re.I)
+SPREAD_F = 5                  # a room this far from the house average gets called out
+# (fair, poor) per reading, and how it's written
+AIR = {"carbon_dioxide": ("CO₂", 800, 1000), "volatile_organic_compounds_parts": ("VOC", 250, 2000),
+       "volatile_organic_compounds": ("VOC", 250, 2000), "pm25": ("PM2.5", 12, 35)}
+LEVELS = ("Good", "Fair", "Poor")
+
+
+def _radon_levels(unit):
+    return (2.7, 4.0) if "pci" in (unit or "").lower() else (100, 150)        # pCi/L or Bq/m³
+
+
+def _light_name(name):
+    n = re.sub(r"\s+lights?$", "", name or "", flags=re.I).strip()
+    return n or name
+
+
+def house_lights(states):
+    inside, outside = [], []
+    for e, st in sorted(states.items()):
+        if not e.startswith("light.") or st.get("state") != "on" or PRINTER_LIGHT.search(e):
+            continue
+        name = st.get("attributes", {}).get("friendly_name") or e
+        (outside if "outdoor" in name.lower() or "outdoor" in e else inside).append(e)
+    return inside, outside
 
 
 def build_house(app, now):
     data = {k: s.fresh() for k, s in app.sources.items()}
     states = data.get("states") or {}
     disc = app.ctx.discovered or {}
-    wx = Weather(data.get("weather"), now.tzinfo)
-    rooms = []
-    for room in (disc.get("rooms") or [])[:2]:
-        def val(k):
-            s = states.get(room.get(k) or "") or {}
-            return num(s.get("state"))
-        t, h, co2, voc = val("temperature"), val("humidity"), val("co2"), val("voc")
-        if t is None:
+    imperial = bool((data.get("weather") or {}).get("imperial", True))
+    unit = "°F" if imperial else "°C"
+    spread = SPREAD_F if imperial else SPREAD_F * 5 / 9
+    checks = []                                      # things that need a look: (icon, text, detail)
+
+    # temperatures: one average for the house, rooms that are off called out
+    rooms, hums, air = {}, [], []
+    for eid, area, kind, u in disc.get("house") or []:
+        if OUTSIDE_AREA.search(area or "") or NOT_ROOM.search(eid):
             continue
-        air = []
-        if co2 is not None:
-            air.append({"k": "CO₂", "v": round(co2)})
-        if voc is not None:
-            air.append({"k": "VOC", "v": round(voc)})
-        verdict, alert = "Air good", False
-        if co2 is not None and co2 >= 1000:
-            verdict, alert = "Open a window", True
-        elif voc is not None and voc >= 2000:
-            verdict, alert = "VOC high", True
-        elif (co2 is not None and co2 >= 800) or (voc is not None and voc >= 250):
-            verdict = "Air fair"
-        rooms.append({"name": room["name"], "t": round(t), "h": round(h) if h is not None else "–",
-                      "air": air, "verdict": verdict, "alert": alert})
-    lights = sorted((s.get("attributes", {}).get("friendly_name") or e) for e, s in states.items()
-                    if e.startswith("light.") and s.get("state") == "on" and not PRINTER_LIGHT.search(e))
-    garage = []
+        v = num((states.get(eid) or {}).get("state"))
+        if v is None:
+            continue
+        if kind == "temperature" and (not u or u == unit):
+            rooms.setdefault(area, []).append(v)
+        elif kind == "humidity":
+            hums.append(v)
+        elif kind in AIR or kind == "radon":
+            air.append((area, kind, v, u))
+    temps = {a: sum(v) / len(v) for a, v in rooms.items()}
+    inside = None
+    if temps:
+        avg = sum(temps.values()) / len(temps)
+        off = sorted(((a, t) for a, t in temps.items() if abs(t - avg) >= spread), key=lambda x: -abs(x[1] - avg))
+        for a, t in off:
+            word = "warm" if t > avg else "cold"
+            checks.append({"icon": "thermometer", "text": f"{a} {round(t)}°, {word}",
+                           "detail": f"{round(abs(t - avg))}° {'above' if t > avg else 'below'} the rest of the house"})
+        n = len(temps)
+        inside = {"t": round(avg), "detail": f"{n} room{'s' if n != 1 else ''}"
+                  + (f" · humidity {round(sum(hums) / len(hums))}%" if hums else ""),
+                  "range": f"{round(min(temps.values()))}–{round(max(temps.values()))}°" if n > 1 else ""}
+
+    # air: one word for the house, the readings behind it
+    level, parts = 0, []
+    for area, kind, v, u in sorted(air, key=lambda x: (x[0], x[1])):
+        if kind == "radon":
+            label, (fair, poor) = "radon", _radon_levels(u)
+            text = f"radon {v:.1f}"
+        else:
+            label, fair, poor = AIR[kind]
+            text = f"{label} {round(v):,}"
+        lv = 2 if v >= poor else 1 if v >= fair else 0
+        level = max(level, lv)
+        parts.append({"area": area, "text": text, "lvl": lv})
+        if lv == 2:
+            checks.append({"icon": "wind", "text": f"{area} {text}",
+                           "detail": "open a window" if kind == "carbon_dioxide" else "air out the room"})
+    by_area = {}
+    for p_ in parts:
+        by_area.setdefault(p_["area"], []).append(p_["text"])
+    airv = {"word": LEVELS[level], "lvl": level,
+            "detail": " · ".join(f"{a} {', '.join(t)}" for a, t in by_area.items())} if parts else None
+
+    # lights
+    lin, lout = house_lights(states)
+    names = lambda ids: [_light_name((states[e].get("attributes") or {}).get("friendly_name") or e) for e in ids]  # noqa: E731
+    lights = {"n": len(lin) + len(lout), "inside": names(lin), "outside": names(lout)}
+
+    rows = []                                        # the right column: (icon, text, detail, alert)
+    # music
+    playing = []
+    for e, st in sorted(states.items()):
+        if e.startswith("media_player.") and st.get("state") == "playing":
+            a = st.get("attributes") or {}
+            what = " — ".join(x for x in (a.get("media_title"), a.get("media_artist")) if x) or a.get("app_name") or ""
+            key = (a.get("friendly_name"), what)
+            if key not in [p["key"] for p in playing]:
+                playing.append({"key": key, "where": a.get("friendly_name") or e, "what": what})
+    if playing:
+        p0 = playing[0]
+        more = f" +{len(playing) - 1}" if len(playing) > 1 else ""
+        rows.append({"icon": "music", "text": f"Playing in {p0['where']}{more}", "detail": p0["what"], "alert": False})
+    else:
+        rows.append({"icon": "music", "text": "No music playing", "detail": "", "alert": False})
+
+    # garage doors
+    gd = []
     for eid in disc.get("garages", []):
-        s = states.get(eid) or {}
-        op = s.get("state") in ("open", "opening")
-        dur = None
-        if op and s.get("last_changed"):
-            mins = int((now - dt.datetime.fromisoformat(s["last_changed"]).astimezone(now.tzinfo)).total_seconds() // 60)
-            dur = f"{mins}m" if mins < 90 else f"{mins // 60}h"
-        garage.append({"name": _short_door(s.get("attributes", {}).get("friendly_name")), "open": dur or ("now" if op else None)})
-    car = None
+        st = states.get(eid) or {}
+        if st.get("state") in ("open", "opening"):
+            mins = 0
+            if st.get("last_changed"):
+                mins = int((now - dt.datetime.fromisoformat(st["last_changed"]).astimezone(now.tzinfo)).total_seconds() // 60)
+            gd.append((_short_door((st.get("attributes") or {}).get("friendly_name")), mins))
+    if gd:
+        for name, mins in gd:
+            door = name if re.search(r"\b(door|gate)$", name, re.I) else f"{name} garage door"
+            checks.append({"icon": "warehouse", "text": f"{door} open",
+                           "detail": f"for {mins} min" if mins < 90 else f"for {mins // 60} h"})
+    elif disc.get("garages"):
+        n = len(disc["garages"])
+        rows.append({"icon": "warehouse", "text": f"Garage {'doors' if n > 1 else 'door'} closed",
+                     "detail": f"all {n}" if n > 2 else "", "alert": False, "ok": True})
+
+    # doors and windows (contact sensors; the car's and the printer's don't count)
+    opened = []
+    for e, st in states.items():
+        dc = (st.get("attributes") or {}).get("device_class")
+        if e.startswith("binary_sensor.") and dc in ("door", "window", "opening") \
+                and not re.search(r"lime|rivian|h2c|printer|vehicle", e, re.I):
+            if st.get("state") == "on":
+                opened.append((st.get("attributes") or {}).get("friendly_name") or e)
+            else:
+                opened.append(None)
+    if any(opened):
+        for n in [x for x in opened if x]:
+            checks.append({"icon": "door-open", "text": f"{n} open", "detail": ""})
+    elif opened:
+        rows.append({"icon": "door-closed", "text": "Doors and windows closed", "detail": "", "alert": False, "ok": True})
+
+    # the car
     for v in disc.get("vehicles") or []:
-        c = _car_detail(states, v, now)
-        if c:
-            car = c
-            break
-    out = None
-    if wx.ok and wx.cur.get("temperature_2m") is not None:
-        day = bool(wx.cur.get("is_day", 1))
-        out = {"icon": wmo_icon(wx.cur.get("weather_code"), day), "temp": round(wx.cur["temperature_2m"]),
-               "text": wmo_text(wx.cur.get("weather_code"), day).lower()}
+        c = view._safe("vehicle", view.vehicle_info, states, v, now)
+        if not c:
+            continue
+        detail = " · ".join(x for x in (c["range"], c["status"] or ("Plugged in" if c["plugged"] else "Not plugged in")) if x)
+        if c["attention"]:
+            checks.append({"icon": "car", "text": f"{c['name']} {c['soc']}%" + (", plug it in" if not c["plugged"] else ""),
+                           "detail": detail})
+        else:
+            rows.append({"icon": "plug-zap" if c["charging"] else "car", "text": f"{c['name']} {c['soc']}%",
+                         "detail": detail, "alert": False})
+
+    # outdoor lights, once there are some (names with "outdoor")
+    if lout:
+        bare = [re.sub(r"\boutdoor\b", "", n, flags=re.I).strip() or n for n in names(lout)]
+        rows.append({"icon": "lightbulb", "text": f"Outdoor light{'s' if len(lout) > 1 else ''} on",
+                     "detail": ", ".join(bare), "alert": False})
+
+    # shopping list
     shop = (data.get("shopping") or {}).get("items")
-    return {"page": "house", "out": out, "rooms": rooms, "lights": lights, "garage": garage, "car": car,
-            "shopping": ", ".join(shop[:6]) + (f", +{len(shop) - 6}" if len(shop) > 6 else "") if shop else
-            ("Nothing on the list" if shop is not None else "Shopping list not found")}
+    if shop is not None:
+        rows.append({"icon": "shopping-basket",
+                     "text": f"Shopping list: {len(shop)} item{'s' if len(shop) != 1 else ''}" if shop else "Shopping list empty",
+                     "detail": ", ".join(shop[:5]) + ("…" if len(shop) > 5 else ""), "alert": False})
+
+    right = [dict(c, alert=True) for c in checks] + rows
+    return {"page": "house", "inside": inside, "air": airv, "lights": lights,
+            "rows": right[:6], "verdict": (f"{len(checks)} thing{'s' if len(checks) != 1 else ''} to check"
+                                           if checks else "All good"), "alert": bool(checks)}
 
 
+# ---------------------------------------------------------------- after "good night"
+def build_night(app, now, result):
+    """What the display shows after someone holds the green button at bedtime."""
+    data = {k: s.fresh() for k, s in app.sources.items()}
+    house = build_house(app, now)
+    still = [r for r in house["rows"] if r.get("alert")]
+    did = []
+    if result.get("script"):
+        did.append("Ran your good night routine")
+    if result.get("lights"):
+        did.append(f"Turned off {result['lights']} light{'s' if result['lights'] != 1 else ''}")
+    if result.get("music"):
+        did.append("paused the music" if did else "Paused the music")
+    wx = Weather(data.get("weather"), now.tzinfo)
+    tm = (now + dt.timedelta(days=1)).date() if now.hour >= 4 else now.date()
+    people = People(app.opts.get("kitchen_people", ""))
+    first = None
+    for e in sorted(_events(data.get("calendar"), people, now.tzinfo), key=lambda e: e["s"]):
+        if e["kind"] == "event" and e["s"].date() == tm:
+            first = f"{tshort(e['s'])} {e['text']}"
+            break
+    w = wx.day(tm) or {}
+    bins = [e["kind"] for e in _events(data.get("calendar"), people, now.tzinfo)
+            if e["kind"] in ("trash", "recycle") and e["s"].date() == tm]
+    tomorrow = []
+    if w.get("hi") is not None:
+        tomorrow.append(f"{round(w['hi'])}°, {wmo_text(w.get('code')).lower()}")
+    if bins:
+        tomorrow.append("trash day" if "trash" in bins else "recycling day")
+    if first:
+        tomorrow.append(f"first up {first}")
+    return {"page": "night", "did": " · ".join(did) if did else "All the lights were already off",
+            "still": still, "tomorrow": " · ".join(tomorrow)}
 def _car_detail(states, v, now):
     c = view._safe("vehicle", view.vehicle_info, states, v, now)
     if not c:

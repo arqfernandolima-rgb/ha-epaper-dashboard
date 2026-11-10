@@ -101,6 +101,9 @@ configuration:
   kitchen_shopping_list:
     name: Kitchen display shopping list (optional)
     description: The to-do list the house page shows. Default todo.shopping_list.
+  kitchen_goodnight_script:
+    name: Kitchen display good night script (optional)
+    description: What holding the green button runs. Default script.good_night if you have one; otherwise every light goes off (not the 3D printers') and music pauses.
   kitchen_stay_awake:
     name: Kitchen display stay-awake switch (optional)
     description: A toggle helper that keeps the kitchen display awake (for firmware updates) while it's on. Default input_boolean.kitchen_display_stay_awake.

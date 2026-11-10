@@ -65,6 +65,10 @@ class HA:
         out = json.loads(self._req("POST", f"/api/services/{domain}/{service}?return_response", data))
         return out.get("service_response", out)
 
+    def call(self, domain, service, data):
+        """Call a service (light.turn_off, script.turn_on ...)."""
+        return json.loads(self._req("POST", f"/api/services/{domain}/{service}", data) or b"[]")
+
     def history(self, entity_ids, start):
         """Every change of these entities since `start`, attribute-only changes included."""
         when = urllib.parse.quote(start.astimezone(dt.timezone.utc).isoformat())

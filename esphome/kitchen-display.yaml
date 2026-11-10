@@ -4,7 +4,7 @@
 # pages; this only downloads one, shows it and deep-sleeps until the next round time.
 #
 #   Timer wake    every 15 min (set in the app), asleep through quiet hours
-#   Green button  refresh (a full, clean redraw)
+#   Green button  refresh (a full, clean redraw); hold it 2 s for good night (lights off)
 #   Right button  next page          Left button  previous page
 #   After a press it stays awake 30 s, so more presses flip pages with a quick partial refresh.
 #
@@ -169,10 +169,20 @@ binary_sensor:
       allow_other_uses: true
     filters:
       - delayed_on: 30ms
-    on_press:
-      - script.execute:
-          id: press
-          what: "refresh"
+    on_multi_click:
+      - timing:                      # held: good night
+          - ON for at least 1.5s
+        then:
+          - script.execute:
+              id: press
+              what: "goodnight"
+      - timing:                      # a tap: refresh
+          - ON for at most 1s
+          - OFF for at least 50ms
+        then:
+          - script.execute:
+              id: press
+              what: "refresh"
   - platform: gpio
     id: right_button
     pin:
@@ -225,6 +235,22 @@ script:
   # Once per wake-up: get on Wi-Fi, show the page, then sleep (or stay up a bit after a press)
   - id: wake_up
     then:
+      # woken by the green button and it's still held: good night
+      - if:
+          condition:
+            lambda: 'return id(act) == "refresh";'
+          then:
+            - wait_until:
+                condition:
+                  lambda: "return !id(green_button).state || millis() > 1600;"
+                timeout: 3s
+            - if:
+                condition:
+                  lambda: "return id(green_button).state;"
+                then:
+                  - globals.set:
+                      id: act
+                      value: '"goodnight"'
       - if:
           condition:
             lambda: 'return id(act) != "timer";'
@@ -352,7 +378,7 @@ script:
     then:
       - if:
           condition:
-            lambda: "return millis() < 1500;"
+            lambda: "return millis() < 3000;"
           then:
             - logger.log: "Ignoring the press that woke it up (already handled)"
           else:

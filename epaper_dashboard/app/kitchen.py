@@ -26,9 +26,10 @@ log = logging.getLogger("dash")
 SIZE = (800, 480)
 PAGES = ("week", "house")
 BACK_TO_WEEK = 10 * 60                 # a timer wake after this long goes back to page 1
-ACTS = ("timer", "refresh", "next", "prev", "poll")
+ACTS = ("timer", "refresh", "next", "prev", "poll", "goodnight")
 WOKE = {"timer": "its timer", "refresh": "the green button", "next": "the right button",
-        "prev": "the left button", "poll": "a stay-awake check"}
+        "prev": "the left button", "poll": "a stay-awake check", "goodnight": "good night (green held)"}
+STAY_MAX = 30 * 60                     # the stay-awake switch turns itself off after this (battery)
 PREP = 45                              # draw this many seconds before a timer wake
 RESEND = 6 * 3600                      # send the same page again after this long anyway
 STAY_DEFAULT = "input_boolean.kitchen_display_stay_awake"
@@ -104,13 +105,57 @@ class Kitchen:
             nxt = wake
         return nxt
 
-    def stay_awake(self):
+    def stay_awake(self, now):
+        """The stay-awake switch (for firmware updates). Left on for more than 30 minutes it's
+        switched off again, so a forgotten switch can't drain the battery."""
         eid = (self.app.opts.get("kitchen_stay_awake") or STAY_DEFAULT).strip()
         try:
-            return self.app.ctx.ha.state(eid).get("state") == "on"
+            st = self.app.ctx.ha.state(eid)
         except Exception:
             st = (self.app.sources["states"].data or {}).get(eid) or {}
-            return st.get("state") == "on"
+        if st.get("state") != "on":
+            return False
+        since = st.get("last_changed")
+        if since and now.timestamp() - dt.datetime.fromisoformat(since).timestamp() > STAY_MAX:
+            try:
+                self.app.ctx.ha.call("input_boolean", "turn_off", {"entity_id": eid})
+                log.info("kitchen: stay-awake switch was on for 30+ min, turned it off")
+            except Exception as e:
+                log.warning("couldn't turn off %s: %s", eid, e)
+            return False
+        return True
+
+    def goodnight(self, now):
+        """Holding green at bedtime: the house's good night script if there is one, otherwise
+        every light off (not the 3D printers') and the music paused."""
+        ha, out = self.app.ctx.ha, {"at": now.timestamp(), "lights": 0, "music": 0, "script": None}
+        try:
+            states = ha.states()
+        except Exception:
+            states = self.app.sources["states"].data or {}
+        script = (self.app.opts.get("kitchen_goodnight_script") or "script.good_night").strip()
+        try:
+            if script in states:
+                ha.call("script", "turn_on", {"entity_id": script})
+                out["script"] = script
+            else:
+                lin, lout = kview.house_lights(states)
+                if lin + lout:
+                    ha.call("light", "turn_off", {"entity_id": lin + lout})
+                out["lights"] = len(lin + lout)
+                playing = [e for e, st in states.items() if e.startswith("media_player.") and st.get("state") == "playing"]
+                if playing:
+                    ha.call("media_player", "media_pause", {"entity_id": playing})
+                out["music"] = len(playing)
+        except Exception as e:
+            log.warning("kitchen good night: %s", e)
+            out["error"] = str(e)
+        log.info("kitchen good night: %s", out)
+        try:                                         # so the page shows the lights off right away
+            self.app.sources["states"].run(self.app.ctx)
+        except Exception:
+            pass
+        return out
 
     # -- GET /kitchen/plan
     def plan(self, act, bat, ip, now):
@@ -121,15 +166,18 @@ class Kitchen:
                 bat = None
         except ValueError:
             bat = None
-        stay = self.stay_awake()
+        stay = self.stay_awake(now)
+        night = self.goodnight(now) if act == "goodnight" else None
         with self.lock:
             st = self.st
             if act == "next":
                 st["page"] = (st["page"] + 1) % len(PAGES)
             elif act == "prev":
                 st["page"] = (st["page"] - 1) % len(PAGES)
-            if act in ("next", "prev", "refresh"):
+            if act in ("next", "prev", "refresh", "goodnight"):
                 st["pressed"] = now.timestamp()
+            if night:
+                st["night"] = night
             elif act == "timer" and st["page"] and now.timestamp() - (st.get("pressed") or 0) >= BACK_TO_WEEK:
                 st["page"] = 0                       # someone left it on the house page
             today = now.date().isoformat()
@@ -161,10 +209,13 @@ class Kitchen:
             log.debug("couldn't publish the kitchen battery: %s", e)
 
     # -- the page
-    def model(self, page, when):
+    def model(self, page, when, act=None):
         """What a page shows at `when`, and a key for it (without the "Updated" time)."""
-        build = kview.build_week if PAGES[page] == "week" else kview.build_house
-        vm = build(self.app, when)
+        if act == "goodnight" and self.st.get("night"):
+            vm = kview.build_night(self.app, when, self.st["night"])
+        else:
+            build = kview.build_week if PAGES[page] == "week" else kview.build_house
+            vm = build(self.app, when)
         key = hashlib.sha1(json.dumps(vm, sort_keys=True, default=str).encode()).hexdigest()[:16]
         return vm, key
 
@@ -211,7 +262,7 @@ class Kitchen:
         """(status, png bytes or None). device=False for the status page preview (records nothing,
         any page)."""
         page = self.st["page"] if page is None or device else page % len(PAGES)
-        vm, key = self.model(page, now)
+        vm, key = self.model(page, now, act if device else None)
         c = self.cache.get(page)
         if device and act == "timer":
             with self.lock:
@@ -223,7 +274,9 @@ class Kitchen:
         if not (c and c.get("key") == key and (device or time.time() - c["at"] < 600)):
             with self.app.render_lock:
                 out = self.draw(page, vm, now)
-            c = self.cache[page] = dict(out, **{"for": None, "key": key})
+            c = dict(out, **{"for": None, "key": key})
+            if vm.get("page") != "night":
+                self.cache[page] = c
         if not device:
             return 200, c["png"]
         with self.lock:

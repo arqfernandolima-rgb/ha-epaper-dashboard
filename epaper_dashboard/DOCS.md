@@ -52,14 +52,16 @@ What comes from the calendars:
 - **Family events**: timed events whose title has a family member's name (other than the owner's) or a family word (school, bus, practice, game, recital, dentist, birthday party, field trip, buscar, levar…). Work meetings stay off. Weekly routine events show on today and tomorrow only.
 - Canceled events are skipped.
 
-**Page 2, the house.** Rooms (temperature, humidity, CO2, VOC), lights that are on, garage doors, the car, and a to-do list (**Kitchen display shopping list**, default `todo.shopping_list`). This page is still being designed.
+**Page 2, the house.** A snapshot: one inside temperature (the average of the rooms, with any room 5°F off the rest called out), lights on (outdoor ones are lights with "outdoor" in the name), air (Good / Fair / Poor from CO2, VOC, radon and PM2.5 sensors, readings by room), what music is playing, garage doors, doors and windows (contact sensors), the car, outdoor lights and the to-do list (**Kitchen display shopping list**, default `todo.shopping_list`). Anything that needs a look goes to the top in black, and the header says "All good" or how many things to check. Rooms are HA areas; garage, greenhouse, pool house, porch and similar areas don't count as inside.
+
+**Good night.** Hold the green button for 2 seconds: it runs **Kitchen display good night script** (default `script.good_night`, if you have one), otherwise turns off every light (not the 3D printers') and pauses any music. The display then shows what it did, anything still open, and tomorrow's weather and first event.
 
 - It wakes on its own every **Kitchen display refresh** minutes (default 15), on round times, and sleeps from **Kitchen display sleeps from** (10 PM) to **wakes at** (6 AM). Any button wakes it right away. If someone leaves it on page 2, the next update goes back to page 1.
 - Buttons: **left** previous page, **right** next page, **green** refresh. After a press it stays awake 30 seconds, so more presses flip pages with a quick partial refresh.
 - Each wake: `GET http://<HA>:8090/kitchen/plan?act=<timer|refresh|next|prev>&bat=<volts>` answers `<sleep seconds> <full refresh 0/1> <stay awake 0/1>`, then `GET /kitchen.png?act=...` returns the page as a 1-bit PNG (or 304 on a timer wake when nothing changed, so the panel isn't refreshed for nothing). Pages for timer wakes are drawn ahead of time, so the display isn't kept awake waiting.
 - The first update of each day, and every green-button press, is a full refresh, which clears any ghosting the quick refreshes leave behind.
 - Battery: shown on the sidebar page and published to Home Assistant as `sensor.kitchen_display_battery` at every wake.
-- Firmware updates: turn on a toggle helper named **Kitchen display stay awake** (`input_boolean.kitchen_display_stay_awake`), press any button on the display, and it stays awake for the ESPHome update. Turn the helper off and it goes back to sleep within a couple of minutes.
+- Firmware updates: turn on a toggle helper named **Kitchen display stay awake** (`input_boolean.kitchen_display_stay_awake`), press any button on the display, and it stays awake for the ESPHome update. Turn the helper off and it goes back to sleep within a couple of minutes; if you forget, the app turns it off after 30 minutes.
 
 The ESPHome config is in this repository at `esphome/kitchen-display.yaml`.
 

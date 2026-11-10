@@ -12,7 +12,7 @@ import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
 
-VERSION = "0.9.2"
+VERSION = "0.10.0"
 UA = f"epaper-dashboard/{VERSION} (+https://github.com/arqfernandolima-rgb/ha-epaper-dashboard)"
 
 
@@ -477,6 +477,26 @@ def ha_states(ctx, prev=None):
     return ctx.ha.states()
 
 
+# Every room sensor with its area, for the kitchen display's house page (#house# marks it for tests)
+HOUSE_TPL = """{#house#}{%- set ns = namespace(out=[]) -%}
+{%- for s in states.sensor -%}
+  {%- set dc = s.attributes.device_class or ('radon' if 'radon' in s.entity_id else '') -%}
+  {%- if dc in ['temperature', 'humidity', 'carbon_dioxide', 'volatile_organic_compounds',
+                'volatile_organic_compounds_parts', 'radon', 'pm25'] -%}
+    {%- set a = area_name(s.entity_id) -%}
+    {%- if a -%}{%- set ns.out = ns.out + [[s.entity_id, a, dc, s.attributes.unit_of_measurement or '']] -%}{%- endif -%}
+  {%- endif -%}
+{%- endfor -%}
+{{ ns.out | to_json }}"""
+
+
+def _house_sensors(ctx):
+    try:
+        return json.loads(ctx.ha.template(HOUSE_TPL))
+    except Exception:
+        return []
+
+
 def discover(ctx, states):
     """Find the entities we need without any setup. Options override each guess."""
     o, ha = ctx.opts, ctx.ha
@@ -521,7 +541,7 @@ def discover(ctx, states):
     weather_eid = o.get("weather_entity") or ("weather.forecast_home" if "weather.forecast_home" in states
                                               else next((e for e in states if e.startswith("weather.")), None))
     return {"rooms": rooms, "printers": printers, "vehicles": vehicles, "packages": packages, "health": health,
-            "calendars": cals, "weather": weather_eid, "garages": garages}
+            "calendars": cals, "weather": weather_eid, "garages": garages, "house": _house_sensors(ctx)}
 
 
 def _split(v):
