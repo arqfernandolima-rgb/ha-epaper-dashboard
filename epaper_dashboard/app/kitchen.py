@@ -137,8 +137,10 @@ class Kitchen:
         return nxt
 
     def stay_awake(self, now):
-        """The stay-awake switch (for firmware updates). Left on for more than 30 minutes it's
-        switched off again, so a forgotten switch can't drain the battery."""
+        """The stay-awake switch (for firmware updates). It's switched off again 30 minutes after the
+        display first saw it on (not after it was flipped: flipped at night, the display only sees it
+        at its first wake in the morning and should still stay up then), so a forgotten switch can't
+        drain the battery."""
         eid = (self.app.opts.get("kitchen_stay_awake") or STAY_DEFAULT).strip()
         try:
             st = self.app.ctx.ha.state(eid)
@@ -146,8 +148,13 @@ class Kitchen:
             st = (self.app.sources["states"].data or {}).get(eid) or {}
         if st.get("state") != "on":
             return False
-        since = st.get("last_changed")
-        if since and now.timestamp() - dt.datetime.fromisoformat(since).timestamp() > STAY_MAX:
+        turned_on = st.get("last_changed") or "on"
+        with self.lock:
+            if self.st.get("stay_on") != turned_on:          # first check-in since it was turned on
+                self.st["stay_on"], self.st["stay_from"] = turned_on, now.timestamp()
+                self._save()
+            start = self.st["stay_from"]
+        if now.timestamp() - start > STAY_MAX:
             try:
                 self.app.ctx.ha.call("input_boolean", "turn_off", {"entity_id": eid})
                 log.info("kitchen: stay-awake switch was on for 30+ min, turned it off")

@@ -61,7 +61,7 @@ What comes from the calendars:
 - Each wake: `GET http://<HA>:8090/kitchen/plan?act=<timer|refresh|next|prev>&bat=<volts>` answers `<sleep seconds> <full refresh 0/1> <stay awake 0/1>`, then `GET /kitchen.png?act=...` returns the page as a 1-bit PNG (or 304 on a timer wake when nothing changed, so the panel isn't refreshed for nothing). Pages for timer wakes are drawn ahead of time, so the display isn't kept awake waiting.
 - The first update of each day, and every green-button press, is a full refresh, which clears any ghosting the quick refreshes leave behind.
 - Battery: published to Home Assistant as `sensor.kitchen_display_battery` at every wake. The house page shows it small in the footer; the week page shows a battery icon only when it's time to charge (10% or less, or about 2 days left at the current rate). The sidebar page shows the days-left estimate once there is a day of readings (it starts over after a charge).
-- Firmware updates: turn on a toggle helper named **Kitchen display stay awake** (`input_boolean.kitchen_display_stay_awake`), press any button on the display, and it stays awake for the ESPHome update. Turn the helper off and it goes back to sleep within a couple of minutes; if you forget, the app turns it off after 30 minutes.
+- Firmware updates: turn on a toggle helper named **Kitchen display stay awake** (`input_boolean.kitchen_display_stay_awake`), and the display stays awake from its next wake-up (or press any button to wake it now) for the ESPHome update. Turn the helper off and it goes back to sleep within a couple of minutes; if you forget, the app turns it off 30 minutes after the display first saw it on.
 
 The ESPHome config is in this repository at `esphome/kitchen-display.yaml`.
 
