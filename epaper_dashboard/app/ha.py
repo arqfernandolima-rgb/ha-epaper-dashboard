@@ -69,10 +69,15 @@ class HA:
         """Call a service (light.turn_off, script.turn_on ...)."""
         return json.loads(self._req("POST", f"/api/services/{domain}/{service}", data) or b"[]")
 
-    def history(self, entity_ids, start):
-        """Every change of these entities since `start`, attribute-only changes included."""
-        when = urllib.parse.quote(start.astimezone(dt.timezone.utc).isoformat())
-        q = urllib.parse.urlencode({"filter_entity_id": ",".join(entity_ids), "significant_changes_only": "0"})
+    def history(self, entity_ids, start, end=None):
+        """Every change of these entities from `start` to `end` (default: up to now, however long ago
+        `start` was), attribute-only changes included. HA itself only covers the day after `start`
+        unless it's given an end_time."""
+        start = start.astimezone(dt.timezone.utc)
+        when = urllib.parse.quote(start.isoformat())
+        end = (end or start + dt.timedelta(days=60)).astimezone(dt.timezone.utc)
+        q = urllib.parse.urlencode({"filter_entity_id": ",".join(entity_ids), "significant_changes_only": "0",
+                                    "end_time": end.isoformat()})
         return self.get(f"/api/history/period/{when}?{q}")
 
     def calendar_events(self, entity_id, start, end):

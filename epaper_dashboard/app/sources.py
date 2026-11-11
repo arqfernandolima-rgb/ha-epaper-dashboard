@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 log = logging.getLogger("sources")
 
-VERSION = "0.11.0"
+VERSION = "0.11.1"
 UA = f"epaper-dashboard/{VERSION} (+https://github.com/arqfernandolima-rgb/ha-epaper-dashboard)"
 
 
