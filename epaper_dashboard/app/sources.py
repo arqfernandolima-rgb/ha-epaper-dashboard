@@ -4,6 +4,7 @@ import datetime as dt
 import hashlib
 import hmac
 import json
+import logging
 import re
 import os
 import time
@@ -12,7 +13,9 @@ import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
 
-VERSION = "0.10.0"
+log = logging.getLogger("sources")
+
+VERSION = "0.11.0"
 UA = f"epaper-dashboard/{VERSION} (+https://github.com/arqfernandolima-rgb/ha-epaper-dashboard)"
 
 
@@ -391,18 +394,42 @@ def calendar(ctx, prev=None):
     return {"calendars": cals, "events": events, "errors": errors}
 
 
+def todo_list_name(friendly, eid):
+    """A list's name for the display: its friendly name, minus a trailing "list"/account tag in
+    brackets (the Microsoft To Do integration can add one)."""
+    n = re.sub(r"\s*[\(\[][^)\]]*[\)\]]\s*$", "", friendly or "").strip()
+    return n or eid.split(".", 1)[1].replace("_", " ").capitalize()
+
+
 def shopping(ctx, prev=None):
-    """What's left on a Home Assistant to-do list (the kitchen display's house page)."""
-    eid = (ctx.opts.get("kitchen_shopping_list") or "todo.shopping_list").strip()
-    try:
-        items = ctx.ha.service_response("todo", "get_items", {"entity_id": eid, "status": "needs_action"})[eid]["items"]
-        names = [i.get("summary") for i in items if i.get("summary")]
-    except Exception:
+    """What's left on the kitchen's to-do lists (the house page): any Home Assistant to-do entities,
+    comma-separated in the option (HA's shopping list, Microsoft To Do lists ...)."""
+    spec = ctx.opts.get("kitchen_shopping_list") or "todo.shopping_list"
+    eids = [e for e in re.split(r"[,\s]+", spec) if e.startswith("todo.")] or ["todo.shopping_list"]
+    lists, errors = [], []
+    for eid in eids:
         try:
-            names = [i["name"] for i in ctx.ha.get("/api/shopping_list") if not i.get("complete")]
+            items = ctx.ha.service_response("todo", "get_items", {"entity_id": eid, "status": "needs_action"})[eid]["items"]
+            names = [i.get("summary") for i in items if i.get("summary")]
         except Exception as e:
-            raise RuntimeError(f"no to-do list {eid}: {e}") from None
-    return {"entity": eid, "items": names}
+            if eid != "todo.shopping_list":
+                errors.append(f"{eid}: {e}")
+                continue
+            try:                                      # the old shopping list API
+                names = [i["name"] for i in ctx.ha.get("/api/shopping_list") if not i.get("complete")]
+            except Exception as e2:
+                errors.append(f"{eid}: {e2}")
+                continue
+        try:
+            friendly = (ctx.ha.state(eid).get("attributes") or {}).get("friendly_name")
+        except Exception:
+            friendly = None
+        lists.append({"entity": eid, "name": todo_list_name(friendly, eid), "items": names})
+    if not lists:
+        raise RuntimeError("no to-do list: " + "; ".join(errors))
+    if errors:
+        log.warning("to-do lists: %s", "; ".join(errors))
+    return {"entity": lists[0]["entity"], "items": lists[0]["items"], "lists": lists}
 
 
 # ---------------------------------------------------------------- HA entities

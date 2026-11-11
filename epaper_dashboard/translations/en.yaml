@@ -99,8 +99,8 @@ configuration:
     name: Kitchen display people (optional)
     description: "Who's who in your calendar events, as initial=names. The first person owns the calendars (their all-day events show as away). Example: F=Fernando; M=Mi,Milena; T=Tom; E=Mimi,Emilia"
   kitchen_shopping_list:
-    name: Kitchen display shopping list (optional)
-    description: The to-do list the house page shows. Default todo.shopping_list.
+    name: Kitchen display to-do lists (optional)
+    description: The to-do lists the house page shows, comma-separated (HA's shopping list, Microsoft To Do lists from the MS365 To Do integration ...). Lists with something on them get a line each. Default todo.shopping_list.
   kitchen_goodnight_script:
     name: Kitchen display good night script (optional)
     description: What holding the green button runs. Default script.good_night if you have one; otherwise every light goes off (not the 3D printers') and music pauses.

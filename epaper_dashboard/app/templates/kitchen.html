@@ -66,13 +66,16 @@ body{width:800px;height:480px;overflow:hidden;background:#fff;color:#000;
 .we .today{background:#000;color:#fff;margin:-5px -8px 0;padding:5px 8px 4px}
 .we .more{margin-top:4px;font-size:15px;font-weight:500}
 /* ---------- footer ---------- */
-.ft{height:52px;display:flex;align-items:center}
-.ft>div{display:flex;align-items:center;gap:9px;font-size:20px;font-weight:600;padding:0 14px;height:100%;white-space:nowrap}
-.ft>div:first-child{padding-left:2px}
-.ft>div+div{border-left:2px solid #000}
-.ft .alert{background:#000;color:#fff;font-weight:700}
-.ft .note{flex:1;min-width:0;overflow:hidden}
-.ft .upd{margin-left:auto;font-size:14px;font-weight:600;gap:8px;padding-right:0}
+.ft{height:52px;display:flex;align-items:center;padding-left:2px}
+.ft .its{display:flex;align-items:center;min-width:0;overflow:hidden}
+.ft .it{display:flex;align-items:center;gap:9px;font-size:20px;font-weight:600;white-space:nowrap;flex-shrink:0}
+.ft .it:last-child{flex-shrink:1;min-width:0}.ft .it .ic{flex-shrink:0}
+.ft .it span{overflow:hidden;text-overflow:ellipsis}
+.ft .it.alert{background:#000;color:#fff;font-weight:700;padding:5px 12px 5px 9px;border-radius:8px}
+.ft .sep{font-size:26px;font-weight:300;padding:0 13px 3px;line-height:1}
+.ft .upd{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;white-space:nowrap;padding-left:12px;flex-shrink:0}
+.bat{display:flex;align-items:center;gap:4px;font-weight:700}
+.ft .bat{font-size:17px;margin-right:6px}
 .dots{display:flex;gap:5px}.dots i{width:9px;height:9px;border-radius:50%;border:2px solid #000;display:block}.dots i.on{background:#000}
 
 /* ---------- house ---------- */
@@ -119,12 +122,12 @@ body{width:800px;height:480px;overflow:hidden;background:#fff;color:#000;
 .blk .dt{font-size:16px;font-weight:600;line-height:1.18;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .blk.poor .bn{background:#000;color:#fff;padding:2px 8px;margin-left:-2px;border-radius:5px;align-self:flex-start}
 .right{display:flex;flex-direction:column}
-.rw{display:flex;align-items:center;gap:12px;padding:0 6px 0 16px;border-bottom:2px solid #000;flex:1;min-height:0;max-height:76px}
-.rw:last-child{border-bottom:none}
+.right{padding:4px 0 4px 10px}
+.rw{display:flex;align-items:center;gap:12px;padding:0 6px 0 8px;flex:1;min-height:0;max-height:72px}
 .rw .tx{flex:1;min-width:0}
 .rw .t1{font-size:22px;font-weight:700;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rw .t2{font-size:16px;font-weight:600;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rw.alert{background:#000;color:#fff}
+.rw.alert{background:#000;color:#fff;border-radius:8px;margin:2px 0}
 .hft{height:44px;display:flex;align-items:center;justify-content:space-between;border-top:3px solid #000;font-size:15px;font-weight:600}
 .hft .upd{display:flex;align-items:center;gap:8px;white-space:nowrap;font-size:14px}
 .hft .hint{display:flex;align-items:center;gap:8px}
@@ -176,8 +179,8 @@ body{width:800px;height:480px;overflow:hidden;background:#fff;color:#000;
   <div class="bars">{% for b in k.bars %}<div class="bar{{ ' one' if b.span == 1 }}" style="grid-column:{{ b.start }} / span {{ b.span }};grid-row:{{ b.row }}">{{ badge(b.who) }}<span class="bt">{{ b.text }}</span>{% if b.span > 1 %}{{ icon('chevron-right' if b.more else 'plane', 18, 2.5) }}{% endif %}</div>{% endfor %}</div>
 </div>
 <div class="ft">
-  {% for x in k.foot %}<div class="{{ 'alert' if x.alert }}">{{ icon(x.icon, 24, 2.25) }}{{ x.text }}</div>{% endfor %}
-  <div class="upd">{{ k.updated }}{{ dots() }}</div>
+  <div class="its">{% for x in k.foot %}{% if not loop.first %}<span class="sep">|</span>{% endif %}<div class="it{{ ' alert' if x.alert }}">{{ icon(x.icon, 24, 2.25) }}<span>{{ x.text }}</span></div>{% endfor %}</div>
+  <div class="upd">{% if k.battery %}<span class="bat">{{ icon(k.battery.icon, 26, 2.25) }}{{ k.battery.pct }}%</span>{% endif %}{{ k.updated }}{{ dots() }}</div>
 </div>
 {% elif k.page == 'house' %}
 <div class="hs"><div class="t">House</div>
@@ -200,7 +203,7 @@ body{width:800px;height:480px;overflow:hidden;background:#fff;color:#000;
       {% if r.ok %}{{ icon('check', 26, 3) }}{% endif %}</div>{% endfor %}
   </div>
 </div>
-<div class="hft"><div class="hint"><span class="key"></span>Hold green 2 s: good night</div><div class="upd">{{ k.updated }}{{ dots() }}</div></div>
+<div class="hft"><div class="hint"><span class="key"></span>Hold green 2 s: good night</div><div class="upd">{% if k.battery %}<span class="bat">{{ icon(k.battery.icon, 20, 2.25) }}{{ k.battery.pct }}%</span><span>·</span>{% endif %}{{ k.updated }}{{ dots() }}</div></div>
 {% else %}
 <div class="night">
   <div class="gn">{{ icon('moon-star', 72, 2) }}Good night</div>

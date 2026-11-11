@@ -591,6 +591,7 @@ SPREAD_F = 5                  # a room this far from the house average gets call
 AIR = {"carbon_dioxide": ("CO₂", 800, 1000), "volatile_organic_compounds_parts": ("VOC", 250, 2000),
        "volatile_organic_compounds": ("VOC", 250, 2000), "pm25": ("PM2.5", 12, 35)}
 LEVELS = ("Good", "Fair", "Poor")
+SHOP_LIST = re.compile(r"shop|grocer|market|costco|store|compras|mercado", re.I)
 
 
 def _radon_levels(unit):
@@ -708,8 +709,9 @@ def build_house(app, now):
                            "detail": f"for {mins} min" if mins < 90 else f"for {mins // 60} h"})
     elif disc.get("garages"):
         n = len(disc["garages"])
-        rows.append({"icon": "warehouse", "text": f"Garage {'doors' if n > 1 else 'door'} closed",
-                     "detail": f"all {n}" if n > 2 else "", "alert": False, "ok": True})
+        rows.append({"icon": "warehouse", "text": f"Garage {'doors' if n > 1 else 'door'}",
+                     "detail": f"all {n} closed" if n > 2 else "both closed" if n == 2 else "closed",
+                     "alert": False, "ok": True})
 
     # doors and windows (contact sensors; the car's and the printer's don't count)
     opened = []
@@ -725,7 +727,9 @@ def build_house(app, now):
         for n in [x for x in opened if x]:
             checks.append({"icon": "door-open", "text": f"{n} open", "detail": ""})
     elif opened:
-        rows.append({"icon": "door-closed", "text": "Doors and windows closed", "detail": "", "alert": False, "ok": True})
+        n = len(opened)
+        rows.append({"icon": "door-closed", "text": "Doors and windows",
+                     "detail": f"all {n} closed" if n > 2 else "closed", "alert": False, "ok": True})
 
     # the car
     for v in disc.get("vehicles") or []:
@@ -746,12 +750,21 @@ def build_house(app, now):
         rows.append({"icon": "lightbulb", "text": f"Outdoor light{'s' if len(lout) > 1 else ''} on",
                      "detail": ", ".join(bare), "alert": False})
 
-    # shopping list
-    shop = (data.get("shopping") or {}).get("items")
-    if shop is not None:
-        rows.append({"icon": "shopping-basket",
-                     "text": f"Shopping list: {len(shop)} item{'s' if len(shop) != 1 else ''}" if shop else "Shopping list empty",
-                     "detail": ", ".join(shop[:5]) + ("…" if len(shop) > 5 else ""), "alert": False})
+    # to-do lists (HA's shopping list, Microsoft To Do lists ...): the ones with something on them
+    shop = data.get("shopping") or {}
+    lists = shop.get("lists")
+    if lists is None and shop.get("items") is not None:
+        lists = [{"name": "Shopping list", "items": shop["items"]}]
+    if lists:
+        full = [x for x in lists if x["items"]]
+        for x in full:
+            n = len(x["items"])
+            rows.append({"icon": "shopping-basket" if SHOP_LIST.search(x["name"]) else "list-todo",
+                         "text": f"{x['name']}: {n} item{'s' if n != 1 else ''}",
+                         "detail": ", ".join(x["items"]), "alert": False})
+        if not full:
+            rows.append({"icon": "shopping-basket", "detail": "", "alert": False,
+                         "text": f"{lists[0]['name']} empty" if len(lists) == 1 else "To-do lists empty"})
 
     right = [dict(c, alert=True) for c in checks] + rows
     return {"page": "house", "inside": inside, "air": airv, "lights": lights,

@@ -39,6 +39,12 @@ CURVE = ((4.15, 100), (4.05, 90), (3.97, 80), (3.90, 70), (3.84, 60), (3.79, 50)
          (3.75, 40), (3.71, 30), (3.67, 20), (3.60, 10), (3.27, 0))
 
 
+BAT_LOG_DAYS = 21                      # readings kept for the days-left estimate
+BAT_EVERY = 30 * 60                    # at most one logged reading per half hour (plus any jump)
+CHARGED = 0.08                         # a rise this big (volts) between readings = it was charged
+LOW_PCT, LOW_DAYS = 10, 2              # page 1 shows the battery when it's this low
+
+
 def battery_pct(v):
     if not v:
         return None
@@ -48,6 +54,30 @@ def battery_pct(v):
         if v >= v2:
             return round(p2 + (p1 - p2) * (v - v2) / (v1 - v2))
     return 0
+
+
+def battery_estimate(log, now_ts):
+    """(% a day, days left) from the readings since the last charge (last 7 days), or Nones while
+    there's under a day of readings to go on."""
+    start = 0
+    for i in range(len(log) - 1, 0, -1):
+        if log[i][1] - log[i - 1][1] > CHARGED:
+            start = i
+            break
+    pts = [(t, battery_pct(v)) for t, v in log[start:] if now_ts - t <= 7 * 86400]
+    if len(pts) < 4 or pts[-1][0] - pts[0][0] < 20 * 3600:
+        return None, None
+    n = len(pts)
+    mt, mp = sum(t for t, _ in pts) / n, sum(p for _, p in pts) / n
+    sxx = sum((t - mt) ** 2 for t, _ in pts)
+    rate = -sum((t - mt) * (p - mp) for t, p in pts) / sxx * 86400
+    if rate < 0.1:                     # not measurably dropping (yet)
+        return max(rate, 0.0), None
+    return rate, pts[-1][1] / rate
+
+
+def battery_icon(pct, low):
+    return "battery-warning" if low else "battery-full" if pct >= 70 else "battery-medium" if pct >= 35 else "battery-low"
 
 
 def t12(d):
@@ -61,6 +91,7 @@ class Kitchen:
         self.st = {"page": 0, "bat": None, "seen": None, "ip": None, "act": None, "wakes": 0, "pressed": 0,
                    "next": None, "sent": None, "sent_at": 0, "cleaned": None, "result": None}
         self.cache = {}                    # page -> {"for": wake ts or None, "key", "png", "at"}
+        self.seeded = False                # battery log filled from HA's history yet
         try:
             with open(self.path) as f:
                 self.st.update(json.load(f))
@@ -190,6 +221,7 @@ class Kitchen:
             st.update(seen=now.timestamp(), ip=ip, next=nxt.timestamp())
             if bat is not None:
                 st["bat"] = bat
+                self._log_battery(now.timestamp(), bat)
             self._save()
         sleep = int(nxt.timestamp() - now.timestamp())     # real seconds (right across DST changes)
         if bat is not None:
@@ -197,6 +229,49 @@ class Kitchen:
         log.debug("kitchen %s from %s: page %d, sleep %ds, full %d, stay %d", act, ip, self.st["page"] + 1,
                   sleep, full, stay)
         return f"{sleep} {int(full)} {int(stay)}\n"
+
+    # -- battery: a log of readings for the days-left estimate. Caller holds self.lock.
+    def _log_battery(self, ts, v):
+        log_ = self.st.setdefault("bat_log", [])
+        if not log_ or ts - log_[-1][0] >= BAT_EVERY or abs(v - log_[-1][1]) >= CHARGED:
+            log_.append([round(ts), v])
+        del log_[:max(0, len(log_) - 2000)]
+        while log_ and ts - log_[0][0] > BAT_LOG_DAYS * 86400:
+            log_.pop(0)
+
+    def _seed_battery(self):
+        """Once: fill the log from Home Assistant's history of the battery sensor (readings from
+        before this version kept a log)."""
+        now = time.time()
+        try:
+            rows = self.app.ctx.ha.history([BATTERY_ENTITY], dt.datetime.fromtimestamp(now - BAT_LOG_DAYS * 86400,
+                                                                                        dt.timezone.utc))
+        except Exception as e:
+            log.debug("kitchen battery history: %s", e)
+            return
+        seen = []
+        for s in (rows[0] if rows else []):
+            v = (s.get("attributes") or {}).get("voltage")
+            when = s.get("last_updated") or s.get("last_changed")
+            if isinstance(v, (int, float)) and when:
+                seen.append((dt.datetime.fromisoformat(when).timestamp(), float(v)))
+        with self.lock:
+            merged = sorted(set(seen) | {tuple(x) for x in self.st.get("bat_log") or []})
+            self.st["bat_log"] = []
+            for t, v in merged:
+                self._log_battery(t, v)
+            self._save()
+        log.info("kitchen battery: %d readings in the log", len(self.st["bat_log"]))
+
+    def battery(self, now):
+        """{"pct", "v", "rate" (% a day), "days" (left), "low"} or None before the first reading."""
+        v = self.st.get("bat")
+        pct = battery_pct(v)
+        if pct is None:
+            return None
+        rate, days = battery_estimate(self.st.get("bat_log") or [], now.timestamp())
+        low = pct <= LOW_PCT or (days is not None and days <= LOW_DAYS)
+        return {"pct": pct, "v": v, "rate": rate, "days": days, "low": low, "icon": battery_icon(pct, low)}
 
     def _publish_battery(self, v):
         pct = battery_pct(v)
@@ -216,7 +291,13 @@ class Kitchen:
         else:
             build = kview.build_week if PAGES[page] == "week" else kview.build_house
             vm = build(self.app, when)
-        key = hashlib.sha1(json.dumps(vm, sort_keys=True, default=str).encode()).hexdigest()[:16]
+            b = self.battery(when)
+            # the house page always shows the charge (small); the week only when it's time to charge
+            if b and (PAGES[page] == "house" or b["low"]):
+                vm["battery"] = {"pct": b["pct"], "icon": b["icon"], "low": b["low"]}
+                if PAGES[page] == "week":
+                    vm["foot"] = vm["foot"][:2]      # room for it next to "Updated"
+        key =hashlib.sha1(json.dumps(vm, sort_keys=True, default=str).encode()).hexdigest()[:16]
         return vm, key
 
     def draw(self, page, vm, when):
@@ -229,6 +310,9 @@ class Kitchen:
     def prepare(self, now):
         """Called from the main loop: draw the page for the coming timer wake ahead of time
         (unless nothing changed, in which case the wake gets 304 and nothing needs drawing)."""
+        if not self.seeded:
+            self.seeded = True
+            threading.Thread(target=self._seed_battery, daemon=True).start()
         nxt = self.st.get("next")
         if not nxt or not 0 < nxt - now.timestamp() <= PREP:
             return
@@ -301,11 +385,18 @@ class Kitchen:
             d = dt.datetime.fromtimestamp(ts, tz)
             return d.strftime("%a ") + t12(d)
         v = st.get("bat")
+        b = self.battery(dt.datetime.now(tz)) or {}
+        if b.get("days") is not None:
+            left = f" · about {b['days']:.0f} days left ({b['rate']:.1f}% a day)"
+        elif b.get("rate") is not None:
+            left = " · barely dropping so far"
+        else:
+            left = " · days left: after a day of readings" if v else ""
         return {
             "seen": when(st.get("seen")), "ip": st.get("ip"), "woke": WOKE.get(st.get("act"), st.get("act")),
             "page": f"{st['page'] + 1} of {len(PAGES)} ({'the week' if st['page'] == 0 else 'the house'})",
             "next": when(st.get("next")),
-            "battery": f"{battery_pct(v)}% ({v:.2f} V)" if v else None, "result": st.get("result"),
+            "battery": f"{battery_pct(v)}% ({v:.2f} V){left}" if v else None, "result": st.get("result"),
             "every": self.every(), "wakes": st.get("wakes") or 0,
             "stay": (self.app.opts.get("kitchen_stay_awake") or STAY_DEFAULT),
         }
